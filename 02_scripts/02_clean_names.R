@@ -1,14 +1,15 @@
-#this script selects specific variables for self-report (baseline & follow-up) data and IATs and renames variables
+#this script selects specific variables for self-report (baseline & follow-up) data and IATs, and renames variables
 
 #todo
 #should any of these dfs be saved into processed data? if so, as csv or as rdata?
+
 
 #####selecting columns for self-report data at baseline and follow-up#####
 ##baseline
 self_report_baseline<-self_report%>%
   select(group,breq3_id1:breq3_ext4,selfefficacy_1:selfefficacy_6, attitudes_i1:attitudes_a2, srbai1:srbai4,
          intention1a:intention_strength, pain_side, pain_both,pain_nrsl_v2.x, 
-         ipaq_sl_job.x:ipaq_sl_semin.x, age_year:sociodems_post)
+         ipaq_sl_job.x:ipaq_sl_semin.x, age_year:sociodems_loc_other)
 
 ##follow-up
 self_report_followup<-self_report%>%
