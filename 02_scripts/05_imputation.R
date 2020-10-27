@@ -1,0 +1,546 @@
+#This script creates an imputed dataset that pools 154 imputations to predict values using predictive mean matching
+##The csv for these data already exist in the fictional-happiness folders, run without # if needed
+#write.csv(imp.int,"01_data/02_processed/01_imputed_data.csv", row.names=FALSE)
+#to load csv into environment
+#imp.int<- read_csv(here("01_data","02_processed", "01_imputed_data.csv"))
+
+#things to resolve:
+##number of imputations to run
+##dealing with squeeze for BMI
+##sensitivity analysis
+
+##LOAD LIBRARIES
+library(here)
+library(dplyr)
+library(mice)
+library(lattice)
+library(naniar) #to explore missingness
+set.seed(734)
+
+#https://uvastatlab.github.io/2019/05/01/getting-started-with-multiple-imputation-in-r/
+
+#imputation models
+#1. assume missing at random (MAR) or missing not at random (MNAR)
+#2. form of the imputation model (structural and assumed error distribution, refer to 3.2)
+#3. set of variables to include as predictors into the imputation model
+#include as many relevant variables as possible, 3.3 for possibilities
+#4 should we impute variables that are functions of other incomplete varrs? 3.4 on passive imputation
+#5 order in which variables should be imputed, 3.6
+#6 setup of the starting imputations and number of iterations. 
+#convergence can be monitored Section 4.3
+#7 m, the number of multiply imputed data sets m too low = large simulation error, 
+#especially if missing information is high
+
+###LOAD FUNCTIONS
+#function to calculate how many options
+how_many_imputations <- function(model,
+cv = .05,
+alpha = .05) {
+  if (is(model, 'mira')) {
+    model <- mice::pool(model)
+  }
+  if (!is(model, "mipo")) {
+    stop("Model must be multiply imputed.")
+  }
+  fmi <- max(model$pooled$fmi)
+  z <- qnorm(1 - alpha/2)
+  
+  fmiu <- plogis(qlogis(fmi) + z*sqrt(2/model$m))
+  
+  ceiling(1 + 1/2*(fmiu/cv)^2)
+}
+
+##IMPORT DATA
+data<- readRDS(here("01_data","02_processed","complete_data_processed.rds"))
+#str(data)
+
+#colnames(complete_data_processed)
+
+data_mis<-data%>%
+  select(d_eval,d_id, habit,
+         IPAQ_MET_MIN_WEEK_T1_trunc,IPAQ_TOTAL_MIN_WMV_T1, IPAQ_TOTAL_MVPA_T1,
+         IPAQ_MET_MIN_WEEK_T2_trunc,IPAQ_TOTAL_MIN_WMV_T2,IPAQ_TOTAL_MVPA_T2,
+         pain_T1,pain_T2,
+         selfefficacy,selfefficacy_walk,
+         intention,intention_min,intention_strength,
+         age,gender,height, weight,income,educ_years,state,study_knee,BMI_calc,
+         instrumental,affective,
+         identified, amotivation,intrinsic,introjected,integrated,extrinsic)
+
+#View(data_mis)
+
+#Data of first and last 10 participants in the dataset
+#head(data_mis,10) 
+#tail(data_mis, 10)
+#summary(data_mis)
+
+#     d_eval             d_id              habit       IPAQ_MET_MIN_WEEK_T1_trunc IPAQ_TOTAL_MIN_WMV_T1 IPAQ_TOTAL_MVPA_T1
+#Min.   :-1.2172   Min.   :-1.28287   Min.   :1.000   Min.   :    0              Min.   :  0.0         Min.   :  0       
+#1st Qu.: 0.6698   1st Qu.:-0.35339   1st Qu.:3.000   1st Qu.: 2202              1st Qu.: 85.0         1st Qu.: 10       
+#Median : 0.9287   Median : 0.03326   Median :4.750   Median : 4373              Median :180.0         Median : 60       
+#Mean   : 0.8352   Mean   : 0.02792   Mean   :4.361   Mean   : 5036              Mean   :199.6         Mean   :104       
+#3rd Qu.: 1.1076   3rd Qu.: 0.40393   3rd Qu.:5.625   3rd Qu.: 6971              3rd Qu.:300.0         3rd Qu.:180       
+#Max.   : 1.6318   Max.   : 1.18383   Max.   :7.000   Max.   :21798              Max.   :540.0         Max.   :360       
+#NA's   :22        NA's   :22         NA's   :6       NA's   :51                 NA's   :47            NA's   :42        
+
+#IPAQ_MET_MIN_WEEK_T2_trunc IPAQ_TOTAL_MIN_WMV_T2 IPAQ_TOTAL_MVPA_T2    pain_T1      pain_T2    selfefficacy   selfefficacy_walk
+#Min.   :   33              Min.   :  0.0         Min.   :  0.00     4      :45   4      :37   Min.   :1.000   Min.   :1.000    
+#1st Qu.: 1894              1st Qu.: 70.0         1st Qu.:  0.00     6      :42   3      :36   1st Qu.:2.625   1st Qu.:2.000    
+#Median : 3744              Median :167.5         Median : 60.00     5      :39   6      :31   Median :3.000   Median :3.000    
+#Mean   : 4491              Mean   :185.1         Mean   : 92.71     3      :36   5      :27   Mean   :3.008   Mean   :2.704    
+#3rd Qu.: 6328              3rd Qu.:272.5         3rd Qu.:150.00     7      :35   7      :23   3rd Qu.:3.750   3rd Qu.:3.000    
+#Max.   :16924              Max.   :540.0         Max.   :360.00     (Other):35   (Other):46   Max.   :4.000   Max.   :4.000    
+#NA's   :69                 NA's   :65            NA's   :62         NA's   :21   NA's   :53   NA's   :6       NA's   :6        
+
+#intention  intention_min    intention_strength      age          gender        height          weight        income     educ_years   
+#0   :  9   Min.   :   0.0   1   :  1           Min.   : 46.00   1   :159   Min.   :135.0   Min.   : 49.00   1   :11   Min.   : 0.00  
+#1   :223   1st Qu.: 120.0   2   :  7           1st Qu.: 56.00   2   : 61   1st Qu.:160.0   1st Qu.: 72.00   2   :26   1st Qu.:12.00  
+#NA's: 21   Median : 240.0   3   : 33           Median : 62.00   NA's: 33   Median :165.0   Median : 83.50   3   :55   Median :15.00  
+#Mean   : 320.4   4   : 59           Mean   : 62.38              Mean   :167.1   Mean   : 84.44   4   :65   Mean   :14.84  
+#3rd Qu.: 420.0   5   :123           3rd Qu.: 68.00              3rd Qu.:175.0   3rd Qu.: 95.00   5   :13   3rd Qu.:17.12  
+#Max.   :6360.0   NA's: 30           Max.   :114.00              Max.   :193.0   Max.   :150.00   6   :48   Max.   :35.00  
+#NA's   :26                          NA's   :34                  NA's   :40      NA's   :37       NA's:35   NA's   :37     
+
+#state        study_knee    BMI_calc      instrumental     affective      identified     amotivation       intrinsic    
+#6      :80   1   :106   Min.   :18.79   Min.   :0.000   Min.   :0.00   Min.   :0.250   Min.   :0.0000   Min.   :0.000  
+#5      :52   2   :120   1st Qu.:25.46   1st Qu.:6.000   1st Qu.:5.00   1st Qu.:2.750   1st Qu.:0.0000   1st Qu.:2.250  
+#4      :41   NA's: 27   Median :29.38   Median :7.000   Median :6.00   Median :3.500   Median :0.0000   Median :3.000  
+#1      :18              Mean   :30.17   Mean   :6.306   Mean   :5.53   Mean   :3.226   Mean   :0.1933   Mean   :2.876  
+#3      :14              3rd Qu.:34.23   3rd Qu.:7.000   3rd Qu.:7.00   3rd Qu.:3.750   3rd Qu.:0.0000   3rd Qu.:3.750  
+#(Other):15              Max.   :49.13   Max.   :7.000   Max.   :7.00   Max.   :4.000   Max.   :2.7500   Max.   :4.000  
+#NA's   :33              NA's   :45      NA's   :6       NA's   :6      NA's   :6       NA's   :6        NA's   :6      
+
+#introjected      integrated      extrinsic     
+#Min.   :0.000   Min.   :0.000   Min.   :0.0000  
+#1st Qu.:1.500   1st Qu.:2.000   1st Qu.:0.0000  
+#Median :2.000   Median :3.000   Median :0.5000  
+#Mean   :2.088   Mean   :2.787   Mean   :0.7348  
+#3rd Qu.:2.750   3rd Qu.:3.750   3rd Qu.:1.2500  
+#Max.   :4.000   Max.   :4.000   Max.   :3.2500  
+#NA's   :6       NA's   :6       NA's   :6  
+
+
+###############INSPECT THE MISSING DATA###############
+
+#Missing data patterns
+md.pattern(data_mis, rotate.names=TRUE)
+p<-md.pairs(data_mis)
+p
+
+vis_miss(data_mis)
+
+###################
+#DERIVED VARIABLES#
+###################
+#data_mis$BMI_derived<-(data_mis$weight/data_mis$height/data_mis$height)*10000
+#meth<-make.method(data_mis)
+#meth["BMI_derived"]<-"~I((data_mis$weight/data_mis$height/data_mis$height)*10000)"
+#pred<-make.predictorMatrix(data_mis)
+#pred[c("weight", "height"),"BMI_derived"]<-0
+#imp.pas<-mice(data_mis, meth=meth, pred=pred,
+              print=TRUE, seed=734)
+
+#View(data_mis)
+#summary(data_mis)
+#have to deal with unlikely value of BMI_derived >50
+
+##########################
+#CREATE INTERACTION TERMS#
+##########################
+#mean-center pain_T2, d_eval, d_id, habit #
+
+#Note that I added a line saying "pain.[AUTOMATIC-PROCESS]" should be used as a predictor when 
+#imputing IPAQ_MET_MIN_WEEK_T2_trunc. Without this step, the imputation model would neglect the product term, 
+#thus being incongruent with the analysis model.
+
+imp2.ext<-cbind(data_mis,pain.eval=NA, pain.id=NA, pain.habit=NA,BMI_derived=NA)
+ini<-mice(imp2.ext,max=0, print=FALSE)
+meth<-ini$meth
+meth["pain.eval"]<- "~I((pain_T2-4.685)*(d_eval-0.8352))"
+meth["pain.id"]<- "~I((pain_T2-4.685)*(d_id-0.02792))"
+meth["pain.habit"] <- "~I((pain_T2-4.685)*(habit-4.361))"
+meth["BMI_derived"]<-"~I((data_mis$weight/data_mis$height/data_mis$height)*10000)"
+pred<-ini$pred
+pred[c("pain_T2","d_eval"),"pain.eval"]<-0
+pred[c("pain_T2","d_id"),"pain.id"]<-0
+pred[c("pain_T2","habit"),"pain.habit"]<-0
+pred[c("weight", "height"),"BMI_derived"]<-0
+post<-ini$post
+post["BMI_derived"]<-"imp.int.test[[j]][, i] <- squeeze(imp.int.test[[j]][, i], c(15, 50))"
+imp.int<- mice(imp2.ext, meth = meth, pred = pred, post = post,
+                print = FALSE, seed = 734)
+squeeze(imp2.ext, bounds = c(min(x[r]), max(x[r])), r = rep.int(TRUE, length(x)))
+https://stackoverflow.com/questions/58095295/imputation-in-mice-post-processing-r
+complete(imp.int)
+attributes(imp.int)
+
+####4. Post-process the values to constrain them between 1 and 25, use norm as the imputation method 
+#for tv.
+#In this way the imputed values of tv are constrained (squeezed by function squeeze()) between 1 and 25.
+ini <- mice(boys, maxit = 0)
+meth <- ini$meth
+meth["tv"] <- "norm"
+post <- ini$post
+post["tv"] <- "imp[[j]][, i] <- squeeze(imp[[j]][, i], c(1, 25))"
+imp <- mice(boys, meth=meth, post=post, print=FALSE)
+  
+#View(imp2.ext)
+
+
+###############CREATING IMPUTATIONS###############
+##########consider how many imputations need to be conducted
+tempData<-mice(imp2.ext, m=5,maxit=20, seed=734)
+modelFit1_eval<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_eval
+                                 +age+educ
+                                 +intention_strength+selfefficacy+selfefficacy_walk
+                                 +pain_T2+pain.eval))
+
+tempData$imp$pain.id
+#how_many_imputations(modelFit1_eval)
+#how_many_imputations(modelFit1_eval)
+#[1] 154
+
+#modelFit1_id<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_id+intention+age+gender+BMI+income+educ+location+pain_T2))
+#how_many_imputations(modelFit1_id)
+#[1] 153
+
+#modelFit1_habit<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+habit+intention+age+gender+BMI+income+educ+location+pain_T2))
+#how_many_imputations(modelFit1_habit)
+#[1] 152
+
+
+###############CREATING THE IMPUTED DATA SET W/ 154 IMPUTATIONS###############
+#imp<-mice(data_mis,m=154,seed=734, print=F)
+imp.int <- mice(imp2.ext, m=154, meth = meth, pred = pred, seed = 734) #has interaction terms
+
+imp.int.test <- mice(imp2.ext, m=1, meth = meth, pred = pred, post = post, seed = 734)
+
+imp.int.test <- mice(imp.int, m=1, meth = meth, pred = pred, post = post, seed = 734)
+
+View(imp.int.test)
+#has interaction terms
+View(imp.int.test_long)
+View(imp2.ext)
+###CHECK THIS CODE####
+#plot(imp)
+plot(imp.int)
+imp$meth
+
+
+
+###############DIAGNOSTIC CHECKING###############
+#DV
+imp$imp$IPAQ_MET_MIN_WEEK_T2_trunc
+
+#imp$imp$IPAQ_TOTAL_MIN_WMV_T2
+#imp$imp$IPAQ_TOTAL_MVPA_T2
+
+#main IV
+imp$imp$d_eval
+imp$imp$d_id
+imp$imp$habit
+
+#other predictor IV
+imp$imp$IPAQ_MET_MIN_WEEK_T1_trunc
+imp$imp$intention_strength
+#imp$imp$IPAQ_TOTAL_MIN_WMV_T1
+#imp$imp$IPAQ_TOTAL_MVPA_T1
+
+#sociodem covariates
+imp$imp$gender
+imp$imp$age
+imp$imp$BMI
+imp$imp$location
+imp$imp$income
+imp$imp$educ
+
+bwplot(imp, pch=20,cex=1.2)
+
+###############SAVE THE IMPUTED DATA###############
+#turn datasets into long format
+imp.int_long<-mice::complete(imp.int, action="long", include = TRUE)
+View(imp.int_long)
+
+imp.int.test_long<-mice::complete(imp.int.test, action="long", include = TRUE)
+View(imp.int.test_long)
+
+write.csv(imp.int_long,"01_data/02_processed/01_imputed_data.csv", row.names=FALSE)
+
+#datlist<-miceadds::mids2datlist(imp.int)
+#fit_m1_eval.list<-with(datlist, lm(IPAQ_MET_MIN_WEEK_T2_trunc~IPAQ_MET_MIN_WEEK_T1_trunc+d_eval))
+#betas<-lapply(fit_m1_eval.list,coef)
+#summary(pool_mi(betas))
+
+#vars<-lapply(fit_m1_eval.list,FUN = function(x){vcovCL(x, cluster = datlist[[1]]$idschool)}))
+
+
+
+colnames(complete_data_processed)
+#Residual standard error: 2575 on 151 degrees of freedom
+#(99 observations deleted due to missingness)
+#Multiple R-squared:  0.447,	Adjusted R-squared:  0.4397 
+#F-statistic: 61.03 on 2 and 151 DF,  p-value: < 2.2e-16
+visreg(lm1_eval)
+par(mfrow=c(2,2))
+plot(lm1_eval)
+
+#Proportion of usable cases
+p<-md.pairs(data_mis)
+p
+
+p$mr/(p$mr+p$mm)
+flux(data_mis)[,1:3]
+#influx of variable quantifies how well its missing data connect to the observed data in other vars
+#outflux of variable quantifies how well its observed data connect to the missing data on other vars
+#in genderal, higher influx and outflux vars are preferred
+
+                            pobs      influx   outflux
+d_eval                     0.9130435 0.070934534 0.7508143
+d_id                       0.9130435 0.070934534 0.7508143
+identified                 0.9762846 0.001930191 0.7557003
+amotivation                0.9762846 0.001930191 0.7557003
+intrinsic                  0.9762846 0.001930191 0.7557003
+introjected                0.9762846 0.001930191 0.7557003
+integrated                 0.9762846 0.001930191 0.7557003
+extrinsic                  0.9762846 0.001930191 0.7557003
+selfefficacy               0.9762846 0.001930191 0.7557003
+selfefficacy_walk          0.9762846 0.001930191 0.7557003
+instrumental               0.9762846 0.001930191 0.7557003
+affective                  0.9762846 0.001930191 0.7557003
+habit                      0.9762846 0.001930191 0.7557003
+intention                  0.9169960 0.033456651 0.4153094
+intention_min              0.8972332 0.052115168 0.3843648
+intention_strength         0.8814229 0.070291137 0.3925081
+study_knee                 0.8932806 0.055653852 0.3762215
+pain_T1                    0.9169960 0.033456651 0.4153094
+IPAQ_MET_MIN_WEEK_T1_trunc 0.7984190 0.142995014 0.2052117
+age                        0.8656126 0.072703876 0.2410423
+gender                     0.8695652 0.068521795 0.2426710
+BMI                        0.8656126 0.072221329 0.2361564
+income                     0.8616601 0.076564259 0.2361564
+educ                       0.8537549 0.084928422 0.2328990
+location                   0.8695652 0.068521795 0.2426710
+pain_T2                    0.7905138 0.161653531 0.3061889
+IPAQ_MET_MIN_WEEK_T2_trunc 0.7272727 0.224867299 0.2426710
+
+quickpred(data_mis)
+
+imp$loggedEvents
+
+
+
+
+IPAQ_MET_MIN_WEEK_T2_trunc
+d_eval                                      0.5454545
+d_id                                        0.5454545
+identified                                  0.0000000
+amotivation                                 0.0000000
+intrinsic                                   0.0000000
+introjected                                 0.0000000
+integrated                                  0.0000000
+extrinsic                                   0.0000000
+selfefficacy                                0.0000000
+selfefficacy_walk                           0.0000000
+instrumental                                0.0000000
+affective                                   0.0000000
+habit                                       0.0000000
+intention                                   0.2857143
+intention_min                               0.3076923
+intention_strength                          0.4666667
+study_knee                                  0.3703704
+pain_T1                                     0.2857143
+IPAQ_MET_MIN_WEEK_T1_trunc                  0.4313725
+age                                         0.2941176
+gender                                      0.2727273
+BMI                                         0.2647059
+income                                      0.2857143
+educ                                        0.3243243
+location                                    0.2727273
+pain_T2                                     0.0000000
+IPAQ_MET_MIN_WEEK_T2_trunc                  0.0000000
+
+p$rm/(p$rm+p$rr)
+IPAQ_MET_MIN_WEEK_T2_trunc
+d_eval                                      0.2554113
+d_id                                        0.2554113
+identified                                  0.2550607
+amotivation                                 0.2550607
+intrinsic                                   0.2550607
+introjected                                 0.2550607
+integrated                                  0.2550607
+extrinsic                                   0.2550607
+selfefficacy                                0.2550607
+selfefficacy_walk                           0.2550607
+instrumental                                0.2550607
+affective                                   0.2550607
+habit                                       0.2550607
+intention                                   0.2327586
+intention_min                               0.2246696
+intention_strength                          0.2376682
+study_knee                                  0.2300885
+pain_T1                                     0.2327586
+IPAQ_MET_MIN_WEEK_T1_trunc                  0.1980198
+age                                         0.2054795
+gender                                      0.2045455
+BMI                                         0.2009132
+income                                      0.2018349
+educ                                        0.2037037
+location                                    0.2045455
+pain_T2                                     0.0800000
+IPAQ_MET_MIN_WEEK_T2_trunc                  0.0000000
+
+                            extrinsic selfefficacy selfefficacy_walk instrumental  affective      habit  intention
+d_eval                     0.02597403   0.02597403        0.02597403   0.02597403 0.02597403 0.02597403 0.06493506
+d_id                       0.02597403   0.02597403        0.02597403   0.02597403 0.02597403 0.02597403 0.06493506
+identified                 0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+amotivation                0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+intrinsic                  0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+introjected                0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+integrated                 0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+extrinsic                  0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+selfefficacy               0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+selfefficacy_walk          0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+instrumental               0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+affective                  0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+habit                      0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.06072874
+intention                  0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+intention_min              0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+intention_strength         0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+study_knee                 0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+pain_T1                    0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+IPAQ_MET_MIN_WEEK_T1_trunc 0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+age                        0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+gender                     0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+BMI                        0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+income                     0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+educ                       0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+location                   0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.00000000
+pain_T2                    0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.03500000
+IPAQ_MET_MIN_WEEK_T2_trunc 0.00000000   0.00000000        0.00000000   0.00000000 0.00000000 0.00000000 0.03260870
+
+
+intention_min intention_strength study_knee    pain_T1 IPAQ_MET_MIN_WEEK_T1_trunc
+d_eval                        0.08225108         0.09956710 0.07792208 0.06493506                 0.18181818
+d_id                          0.08225108         0.09956710 0.07792208 0.06493506                 0.18181818
+identified                    0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+amotivation                   0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+intrinsic                     0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+introjected                   0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+integrated                    0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+extrinsic                     0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+selfefficacy                  0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+selfefficacy_walk             0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+instrumental                  0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+affective                     0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+habit                         0.08097166         0.09716599 0.08502024 0.06072874                 0.18218623
+intention                     0.02155172         0.03879310 0.02586207 0.00000000                 0.12931034
+intention_min                 0.00000000         0.03964758 0.02643172 0.00000000                 0.12334802
+intention_strength            0.02242152         0.00000000 0.02690583 0.00000000                 0.13004484
+study_knee                    0.02212389         0.03982301 0.00000000 0.00000000                 0.12389381
+pain_T1                       0.02155172         0.03879310 0.02586207 0.00000000                 0.12931034
+IPAQ_MET_MIN_WEEK_T1_trunc    0.01485149         0.03960396 0.01980198 0.00000000                 0.00000000
+age                           0.01826484         0.04109589 0.02283105 0.00000000                 0.09132420
+gender                        0.01818182         0.04090909 0.02272727 0.00000000                 0.09090909
+BMI                           0.01826484         0.04109589 0.02283105 0.00000000                 0.08675799
+income                        0.01834862         0.04128440 0.02293578 0.00000000                 0.09174312
+educ                          0.01851852         0.04166667 0.02314815 0.00000000                 0.09259259
+location                      0.01818182         0.04090909 0.02272727 0.00000000                 0.09090909
+pain_T2                       0.05500000         0.07500000 0.05500000 0.03500000                 0.12000000
+IPAQ_MET_MIN_WEEK_T2_trunc    0.04347826         0.07608696 0.05434783 0.03260870                 0.11956522
+                             age     gender         BMI      income       educ   location   pain_T2
+d_eval                     0.112554113 0.10822511 0.112554113 0.116883117 0.12554113 0.10822511 0.1991342
+d_id                       0.112554113 0.10822511 0.112554113 0.116883117 0.12554113 0.10822511 0.1991342
+identified                 0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+amotivation                0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+intrinsic                  0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+introjected                0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+integrated                 0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+extrinsic                  0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+selfefficacy               0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+selfefficacy_walk          0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+instrumental               0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+affective                  0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+habit                      0.113360324 0.10931174 0.113360324 0.117408907 0.12550607 0.10931174 0.1902834
+intention                  0.056034483 0.05172414 0.056034483 0.060344828 0.06896552 0.05172414 0.1681034
+intention_min              0.052863436 0.04845815 0.052863436 0.057268722 0.06607930 0.04845815 0.1674009
+intention_strength         0.058295964 0.05381166 0.058295964 0.062780269 0.07174888 0.05381166 0.1704036
+study_knee                 0.053097345 0.04867257 0.053097345 0.057522124 0.06637168 0.04867257 0.1637168
+pain_T1                    0.056034483 0.05172414 0.056034483 0.060344828 0.06896552 0.05172414 0.1681034
+IPAQ_MET_MIN_WEEK_T1_trunc 0.014851485 0.00990099 0.009900990 0.019801980 0.02970297 0.00990099 0.1287129
+age                        0.000000000 0.00000000 0.004566210 0.009132420 0.01826484 0.00000000 0.1369863
+gender                     0.004545455 0.00000000 0.004545455 0.009090909 0.01818182 0.00000000 0.1363636
+BMI                        0.004566210 0.00000000 0.000000000 0.009132420 0.01826484 0.00000000 0.1324201
+income                     0.004587156 0.00000000 0.004587156 0.000000000 0.01376147 0.00000000 0.1376147
+educ                       0.004629630 0.00000000 0.004629630 0.004629630 0.00000000 0.00000000 0.1388889
+location                   0.004545455 0.00000000 0.004545455 0.009090909 0.01818182 0.00000000 0.1363636
+pain_T2                    0.055000000 0.05000000 0.050000000 0.060000000 0.07000000 0.05000000 0.0000000
+IPAQ_MET_MIN_WEEK_T2_trunc 0.054347826 0.04891304 0.048913043 0.054347826 0.06521739 0.04891304 0.0000000
+
+                                 IPAQ_MET_MIN_WEEK_T2_trunc
+d_eval                                      0.2554113
+d_id                                        0.2554113
+identified                                  0.2550607
+amotivation                                 0.2550607
+intrinsic                                   0.2550607
+introjected                                 0.2550607
+integrated                                  0.2550607
+extrinsic                                   0.2550607
+selfefficacy                                0.2550607
+selfefficacy_walk                           0.2550607
+instrumental                                0.2550607
+affective                                   0.2550607
+habit                                       0.2550607
+intention                                   0.2327586
+intention_min                               0.2246696
+intention_strength                          0.2376682
+study_knee                                  0.2300885
+pain_T1                                     0.2327586
+IPAQ_MET_MIN_WEEK_T1_trunc                  0.1980198
+age                                         0.2054795
+gender                                      0.2045455
+BMI                                         0.2009132
+income                                      0.2018349
+educ                                        0.2037037
+location                                    0.2045455
+pain_T2                                     0.0800000
+IPAQ_MET_MIN_WEEK_T2_trunc                  0.0000000
+
+#Sources
+#to determine how many imputations are needed https://statisticalhorizons.com/how-many-imputations
+#https://stats.stackexchange.com/questions/219013/how-do-the-number-of-imputations-the-maximum-iterations-affect-accuracy-in-mul/219049
+#Hippel 2018, How many imputations do you need? https://arxiv.org/abs/1608.05406
+#Nguyen et al.2017, Model chcking in MI https://ete-online.biomedcentral.com/articles/10.1186/s12982-017-0062-6
+#https://stats.stackexchange.com/questions/200477/compute-95-confidence-interval-for-predictions-using-a-pooled-model-after-multi
+#https://github.com/stefvanbuuren/mice/issues/92 for CI
+#https://rdrr.io/cran/mice/man/pool.r.squared.html for r-square
+#https://www.tandfonline.com/doi/full/10.1080/00273171.2018.1540967 for significance tests and esitmates (F)
+#derived variables: https://stefvanbuuren.name/fimd/sec-knowledge.html
+
+#Notes
+#analysis model vs. models used for imputation
+#include all the variables from the analysis model in the imputation model 
+#to ensure imputation model preserved the relationships between the vars of interest
+#include auxiliary variables that are good candidates (i.e. highly correlated with incomplete vars, 
+#which could improve prediction of missing values)
+#include predictors of missingess
+
+#Theoretically it is always better to use higher m, but this involves more computation and storage. Setting  
+#m very high (say  m   =200) may be useful for low-level estimands that are very uncertain, and for which we want to approximate the full distribution, or for parameters that are notoriously different to estimates, like variance components. On the other hand, setting  
+#m high may not be worth the extra wait if the primary interest is on the point estimates (and not on standard errors,  
+# p -values, and so on). In that case using  m=5−20 will be enough under moderate missingness.
+
+#Imputing a dataset in practice often involves trial and error to adapt and refine the imputation model. Such initial explorations do not require large  
+#m. It is convenient to set  m= 5 during model building, and increase  m only after being satisfied with the model for the “final” round of imputation. So if calculation is not prohibitive, we may set  
+#m to the average percentage of missing data. The substantive conclusions are unlikely to change as a result of raising  
+#m beyond m=  5
+
+#explore the imputed value
+#generate descriptive statistics
+#graphical displays such as histograms or boxplots
+#compare observed and imputed data (an internal check)
+##this includes boxplots, density plots, cumulative distribution plots
+##strip plots and quantile-quantile plots
+##generate summary statistics of of the observed and imputed data
+
+#passive imputation: since transformed variable is available for imputation, the hope is that passive imputation
+#removes the bias of the imputation, then transform methods, while restoring consistency among the imputations that was broken

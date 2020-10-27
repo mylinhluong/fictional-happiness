@@ -1,9 +1,14 @@
 #This script computes d-scores for implicit association test (IAT).
 #automatic evaluations (i.e. IAT_eval) and 
 #automatic self-schema (i.e. IAT_id) 
+#Another posssibility for scoring IAT = IATscores package: https://cran.r-project.org/web/packages/IATscores/IATscores.pdf
 
-#to-do
-#review script to see if can be written more efficiently, e.g. use dplyr rather than base r to join df?
+library(gdata)
+
+#Create a .txt file within the errors folder
+tidy_03_IAT <- file(here("02_scripts","Errors", "03_tidy_IAT.txt"), open = "wt")
+sink(tidy_03_IAT , type = "message")
+
 
 #function for converting variable types#
 convert.magic <- function(obj, type){
@@ -18,6 +23,7 @@ convert.magic <- function(obj, type){
 ##function to calculate mean and sd of RTs
 f <- function(x) c( iMean=mean(x, na.rm=TRUE), iSD=sd(x, na.rm=TRUE), iTen=quantile(x, prob = .10), iNinety=quantile(x, prob = .90) )
 
+#View(IAT)
 
 ##cutting user practice trials and dividing into separate measures## (another option is to select by )
 #Automatic Evals#
@@ -201,12 +207,25 @@ BW_id<-remove.vars(BW_id, names="BWd_id.subject")
 
 #Merge Automatic evals + Automatic self-schema together
 IAT_processed_dscore<-merge(BW_eval, BW_id, by="subject")%>%
-  select(group=subject,d_eval,rel_evalD1,rel_evalD2, d_id, rel_idD1, rel_idD2)
-
-str(IAT_processed_dscore)
+  select(subject,d_eval,rel_evalD1,rel_evalD2, d_id, rel_idD1, rel_idD2)
 
 ##converts data to numeric
-IAT_processed_dscore<-convert.magic(IAT_processed_dscore, "numeric")
+IAT_processed_dscore<-convert.magic(IAT_processed_dscore, "numeric")%>%
+  rename(group=subject)
+
+#View(IAT_processed_dscore)
+#str(IAT_processed_dscore)
+
+#Write to RDS file
+#saveRDS(IAT_processed_dscore,"01_data/02_processed/IAT_processed_dscore.rds")
 
 #Write to CSV file
-write.csv(IAT_processed_dscore,"01_data/02_processed/IAT_processed_dscore.csv", row.names=FALSE)
+#write.csv(IAT_processed_dscore,"01_data/02_processed/IAT_processed_dscore.csv", row.names=FALSE)
+
+#end of script
+#close the error message catching script and save the file
+sink(type = "message")
+close(tidy_03_IAT )
+
+#Open the .txt file for inspection
+readLines(here("02_scripts","Errors", "03_tidy_IAT.txt"))

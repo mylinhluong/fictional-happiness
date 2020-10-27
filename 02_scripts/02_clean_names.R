@@ -1,19 +1,23 @@
 #this script selects specific variables for self-report (baseline & follow-up) data and IATs, and renames variables
 
-#todo
-#should any of these dfs be saved into processed data? if so, as csv or as rdata?
+library(dplyr)
 
+#Create a .txt file within the errors folder
+clean_names_02 <- file(here("02_scripts","Errors", "02_clean_names.txt"), open = "wt")
+sink(clean_names_02, type = "message")
 
 #####selecting columns for self-report data at baseline and follow-up#####
 ##baseline
 self_report_baseline<-self_report%>%
   select(group,breq3_id1:breq3_ext4,selfefficacy_1:selfefficacy_6, attitudes_i1:attitudes_a2, srbai1:srbai4,
          intention1a:intention_strength, pain_side, pain_both,pain_nrsl_v2.x, 
-         ipaq_sl_job.x:ipaq_sl_semin.x, age_year:sociodems_loc_other)
+         ipaq_sl_job.x:ipaq_sl_semin.x, age_year:sociodems_post)
+#View(self_report_baseline)
 
 ##follow-up
 self_report_followup<-self_report%>%
   select(group, pain_nrsl_v2.y:ipaq_sl_semin.y)
+#View(self_report_followup)
 
 #####re-naming variables for IPAQ#####
 ##baseline
@@ -49,7 +53,15 @@ self_report_followup_IPAQ<-select(self_report_followup,group=group,
                                   PA_LEISURE_MOD_FREQ=ipaq_sl_lmday.y, PA_LEISURE_MOD_TIME_HR=ipaq_sl_lmdhrs.y, PA_LEISURE_MOD_TIME_MIN=ipaq_sl_lmdmin.y) 
                           
 
-#####selecting columns for IATs & renaming a variable#####
+#####selecting columns for IATs#####
 IAT<-IAT%>%
   select(group:expressions.percentcorrect)%>%
   rename(subject=group)
+
+#end of script
+#close the error message catching script and save the file
+sink(type = "message")
+close(clean_names_02)
+
+#Open the .txt file for inspection
+readLines(here("02_scripts","Errors", "02_clean_names.txt"))

@@ -1,11 +1,12 @@
 #this script scores IPAQ data
 
-#todo
-#how to deal with the >960 values, since they should be excluded and NOT imputed as NAs? 
-#thresholds for total min v total MET-minutes (see page 8 of scoring protocol) vs. page 11 (7.4 truncation of data)
-#calculate median and IQR
+#Create a .txt file within the errors folder
+tide_self_report_IPAQ_03 <- file(here("02_scripts","Errors", "01_tidy_selfreport_IPAQ.txt"), open = "wt")
+sink(tide_self_report_IPAQ_03, type = "message")
 
-######IPAQ Scoring Protocol##### #link to Scoring Protocol here: https://sites.google.com/site/theipaq/scoring-protocol
+######IPAQ Scoring Protocol##### 
+#link to Scoring Protocol here: https://sites.google.com/site/theipaq/scoring-protocol
+
 ###MINIMUM VALUES FOR DURATION OF ACTIVITY###
 #Only values of 10 or more minutes of activity should be included in the calculation of
 #summary scores. The rationale being that the scientific evidence indicates that
@@ -13,16 +14,12 @@
 #Responses of less than 10 minutes [and their associated days] should be re-coded to
 #‘zero’. 
 
-#in our data, we corrected this in excel, may need to go back and correct this in R?
-##check if any mins <10, if so replace with 0
-#minutes<-select(self_report_baseline_IPAQ, ends_with("_MIN"))
-#View(minutes)
+##in our data, we corrected this manually in excel
 
 #The ‘days’ variables can take the range 0-7 days, or 8, 9 (don’t know or refused);
 #values greater than 9 should not be allowed and those cases excluded from analysis.
-#in our survey they only took the range of 0-7, so 8/9 are not in our data
-#check if any frequencies >7, if so, replace with 0
-#frequency<-select(self_report_baseline_IPAQ, ends_with("FREQ"))
+##in our survey they only took the range of 0-7, so 8/9 are not in our data
+
 
 ###MAXIMUM VALUES FOR EXCLUDING OUTLIERS###
 #All cases in which the sum total of all Walking, Moderate and Vigorous time variables is greater than 960
@@ -33,7 +30,6 @@
 #In IPAQ long – variables total Walking, total Moderate intensity
 #and total Vigorous-intensity activity are calculated and then, for each of
 #these summed behaviours, the total value should be truncated to 3 hours (180minutes).
-##??how to deal with this in IPAQ long, whereby there are different activity domains and you're not referring back to total time variables??
 
 #colnames(self_report_baseline_IPAQ)
 #[1] "group"                    "PA_JOB_UNPAID_WRK"        "PA_WRK_VIG_FREQ"          "PA_WRK_VIG_TIME_HR"       "PA_WRK_VIG_TIME_MIN"      "PA_WRK_MOD_FREQ"          "PA_WRK_MOD_TIME_HR"       "PA_WRK_MOD_TIME_MIN"     
@@ -53,11 +49,6 @@
 #Total physical activity MET-minutes/week = sum of Walking + Moderate + Vigorous METminutes/
 #  week scores.
 
-#DOMAINS
-#work
-#active transport
-#domestic and garden
-#leisure-time
 
 #creating a tidy IPAQ data frame at baseline
 IPAQ_T1<-self_report_baseline_IPAQ%>%
@@ -65,8 +56,8 @@ IPAQ_T1<-self_report_baseline_IPAQ%>%
          total_mod_min=(PA_WRK_MOD_TIME_MIN) + (PA_CYCLING_TIME_MIN) + (PA_GARDEN_VIG_TIME_MIN),
          total_vig_min=(PA_WRK_VIG_TIME_MIN)+ PA_LEISURE_VIG_TIME_MIN)%>%
   mutate(total_PA_min=total_walk_min+total_mod_min+total_vig_min)%>%
-  filter(is.na(total_PA_min)|total_PA_min<960)%>% #check if total walking, mod, vig >960, if so then NA_integer_, or remove from dataset?
-  mutate(total_walk_min_trunc=ifelse(total_walk_min>180,180, total_walk_min),#is it necessary to create this variable for long IPAQ?
+  filter(is.na(total_PA_min)|total_PA_min<960)%>% #check if total walking, mod, vig >960 and rm from df
+  mutate(total_walk_min_trunc=ifelse(total_walk_min>180,180, total_walk_min),
         total_mod_min_trunc=ifelse(total_mod_min>180,180,total_mod_min),
         total_vig_min_trunc=ifelse(total_vig_min>180,180, total_vig_min))%>%
   mutate(PA_WRK_VIG_TIME_DAY=PA_WRK_VIG_FREQ*PA_WRK_VIG_TIME_MIN,
@@ -91,10 +82,15 @@ IPAQ_T1<-self_report_baseline_IPAQ%>%
   mutate(PA_TOTAL_WALK_MET_trunc=ifelse(PA_TOTAL_WALK_MET>4158, 4158, PA_TOTAL_WALK_MET), #I ended up truncating based on max METs possible
          PA_TOTAL_MOD_MET_trunc=ifelse(PA_TOTAL_MOD_MET>7560,7560, PA_TOTAL_MOD_MET),
          PA_TOTAL_VIG_MET_trunc=ifelse(PA_TOTAL_VIG_MET>10080, 10080, PA_TOTAL_VIG_MET))%>%
-  mutate(TOTAL_PA_SCORE_WEEK_trunc=PA_TOTAL_WALK_MET_trunc+PA_TOTAL_MOD_MET_trunc+ PA_TOTAL_VIG_MET_trunc)%>%
-  select(group,IPAQ_MET_MIN_WEEK_T1=TOTAL_PA_SCORE_WEEK, IPAQ_MET_MIN_WEEK_T1_trunc=TOTAL_PA_SCORE_WEEK_trunc)
+  mutate(TOTAL_PA_SCORE_WEEK_trunc=PA_TOTAL_WALK_MET_trunc+PA_TOTAL_MOD_MET_trunc+ PA_TOTAL_VIG_MET_trunc,
+         IPAQ_TOTAL_MIN_WMV_T1=total_walk_min_trunc+total_mod_min_trunc+total_vig_min_trunc,
+         IPAQ_TOTAL_MVPA_T1=total_mod_min_trunc+total_vig_min_trunc)%>%
+  select(group,IPAQ_MET_MIN_WEEK_T1=TOTAL_PA_SCORE_WEEK, IPAQ_MET_MIN_WEEK_T1_trunc=TOTAL_PA_SCORE_WEEK_trunc, 
+         IPAQ_TOTAL_MIN_W_T1=total_walk_min_trunc,IPAQ_TOTAL_MIN_M_T1=total_mod_min_trunc, IPAQ_TOTAL_MIN_V_T1=total_vig_min_trunc, 
+         IPAQ_TOTAL_MIN_WMV_T1,IPAQ_TOTAL_MVPA_T1)
 
-#maybe >4158, 7560, 10080 aren't necessary
+#View(IPAQ_T1)
+
 #As there are no established thresholds for presenting MET-minutes, the IPAQ
 #Research Committee proposes that these data are reported as comparisons of
 #median values and interquartile ranges for different populations.
@@ -105,6 +101,7 @@ IPAQ_T1<-self_report_baseline_IPAQ%>%
 #and total Vigorous-intensity activity are calculated and then, for each of
 #these summed behaviours, the total value should be truncated to 3 hours (180 minutes).
 
+#In our data, we accounted for this by truncating the max MET-mins for each activity intensity
 #MAX METs for walking=(180*7)*3.3=4158
 #MAX METs for moderate= (180*7)*6= 7560
 #MAX METs for vigorous= (180*7)*8=10080
@@ -159,9 +156,13 @@ IPAQ_T2<-self_report_followup_IPAQ%>%
   mutate(PA_TOTAL_WALK_MET_trunc=ifelse(PA_TOTAL_WALK_MET>4158, 4158, PA_TOTAL_WALK_MET),
          PA_TOTAL_MOD_MET_trunc=ifelse(PA_TOTAL_MOD_MET>7560,7560, PA_TOTAL_MOD_MET),
          PA_TOTAL_VIG_MET_trunc=ifelse(PA_TOTAL_VIG_MET>10080, 10080, PA_TOTAL_VIG_MET))%>%
-  mutate(TOTAL_PA_SCORE_WEEK_trunc=PA_TOTAL_WALK_MET_trunc+PA_TOTAL_MOD_MET_trunc+ PA_TOTAL_VIG_MET_trunc)%>%
-  select(group,IPAQ_MET_MIN_WEEK_T2=TOTAL_PA_SCORE_WEEK, IPAQ_MET_MIN_WEEK_T2_trunc=TOTAL_PA_SCORE_WEEK_trunc)
-
+  mutate(TOTAL_PA_SCORE_WEEK_trunc=PA_TOTAL_WALK_MET_trunc+PA_TOTAL_MOD_MET_trunc+ PA_TOTAL_VIG_MET_trunc,
+         IPAQ_TOTAL_MIN_WMV_T2=total_walk_min_trunc+total_mod_min_trunc+total_vig_min_trunc,
+         IPAQ_TOTAL_MVPA_T2=total_mod_min_trunc+total_vig_min_trunc)%>%
+  select(group,IPAQ_MET_MIN_WEEK_T2=TOTAL_PA_SCORE_WEEK, IPAQ_MET_MIN_WEEK_T2_trunc=TOTAL_PA_SCORE_WEEK_trunc, IPAQ_TOTAL_MIN_W_T2=total_walk_min_trunc, 
+         IPAQ_TOTAL_MIN_M_T2=total_mod_min_trunc, IPAQ_TOTAL_MIN_V_T2=total_vig_min_trunc,IPAQ_TOTAL_MIN_WMV_T2,IPAQ_TOTAL_MVPA_T2)
+#View(IPAQ_T2)
+  
 #IPAQ excluded participants because gt>960, write code for NA_integer_ for exclusion? different than NA b/c don't want to impute data?
 #IPAQ_T2_gt960<-self_report_followup_IPAQ%>%
 #  mutate(total_walk_min=(PA_WRK_WALK_TIME_MIN)+(PA_TRANS_WALK_TIME_MIN) + (PA_LEISURE_WALK_TIME_MIN),
@@ -175,3 +176,11 @@ IPAQ_T2<-self_report_followup_IPAQ%>%
 #group total_PA_min
 #1 670504335         1110
 #2 870091392         1095
+
+#end of script
+#close the error message catching script and save the file
+sink(type = "message")
+close(tide_self_report_IPAQ_03)
+
+#Open the .txt file for inspection
+readLines(here("02_scripts","Errors", "01_tidy_selfreport_IPAQ.txt"))
