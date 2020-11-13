@@ -14,22 +14,23 @@ library(here)
 library(dplyr)
 library(mice)
 library(lattice)
-library(naniar) #to explore missingness
+library(naniar)#to explore missingness
+
 set.seed(734)
+
+#Create a .txt file within the errors folder
+imputation_05 <- file(here("02_scripts","Errors", "05_imputation.txt"), open = "wt")
+sink(imputation_05, type = "message")
 
 #https://uvastatlab.github.io/2019/05/01/getting-started-with-multiple-imputation-in-r/
 
-#imputation models
-#1. assume missing at random (MAR) or missing not at random (MNAR)
-#2. form of the imputation model (structural and assumed error distribution, refer to 3.2)
-#3. set of variables to include as predictors into the imputation model
-#include as many relevant variables as possible, 3.3 for possibilities
-#4 should we impute variables that are functions of other incomplete varrs? 3.4 on passive imputation
-#5 order in which variables should be imputed, 3.6
-#6 setup of the starting imputations and number of iterations. 
-#convergence can be monitored Section 4.3
-#7 m, the number of multiply imputed data sets m too low = large simulation error, 
-#especially if missing information is high
+#library(howManyImputations)
+tempData <- mice(data,m=5,maxit=10,meth='pmm',seed=500)
+modelFit1 <- with(tempData,lm(Temp~ Ozone+Solar.R+Wind))
+how_many_imputations(modelFit1)
+[1] 72
+how_many_imputations(modelFit1, cv = .01)
+[1] 1767
 
 ###LOAD FUNCTIONS
 #function to calculate how many options
@@ -56,7 +57,7 @@ data<- readRDS(here("01_data","02_processed","complete_data_processed.rds"))
 
 #colnames(complete_data_processed)
 
-data_mis<-data%>%
+data_miss<-data%>%
   select(d_eval,d_id, habit,
          IPAQ_MET_MIN_WEEK_T1_trunc,IPAQ_TOTAL_MIN_WMV_T1, IPAQ_TOTAL_MVPA_T1,
          IPAQ_MET_MIN_WEEK_T2_trunc,IPAQ_TOTAL_MIN_WMV_T2,IPAQ_TOTAL_MVPA_T2,
@@ -67,12 +68,14 @@ data_mis<-data%>%
          instrumental,affective,
          identified, amotivation,intrinsic,introjected,integrated,extrinsic)
 
-#View(data_mis)
+
+
+#View(data_miss)
 
 #Data of first and last 10 participants in the dataset
-#head(data_mis,10) 
-#tail(data_mis, 10)
-#summary(data_mis)
+#head(data_miss,10) 
+#tail(data_miss, 10)
+#summary(data_miss)
 
 #     d_eval             d_id              habit       IPAQ_MET_MIN_WEEK_T1_trunc IPAQ_TOTAL_MIN_WMV_T1 IPAQ_TOTAL_MVPA_T1
 #Min.   :-1.2172   Min.   :-1.28287   Min.   :1.000   Min.   :    0              Min.   :  0.0         Min.   :  0       
@@ -121,40 +124,26 @@ data_mis<-data%>%
 
 
 ###############INSPECT THE MISSING DATA###############
-
 #Missing data patterns
-md.pattern(data_mis, rotate.names=TRUE)
-p<-md.pairs(data_mis)
+md.pattern(data_miss, rotate.names=TRUE)
+p<-md.pairs(data_miss)
 p
 
-vis_miss(data_mis)
+vis_miss(data_miss)
 
-###################
-#DERIVED VARIABLES#
-###################
-#data_mis$BMI_derived<-(data_mis$weight/data_mis$height/data_mis$height)*10000
-#meth<-make.method(data_mis)
-#meth["BMI_derived"]<-"~I((data_mis$weight/data_mis$height/data_mis$height)*10000)"
-#pred<-make.predictorMatrix(data_mis)
-#pred[c("weight", "height"),"BMI_derived"]<-0
-#imp.pas<-mice(data_mis, meth=meth, pred=pred,
-              print=TRUE, seed=734)
-
-#View(data_mis)
-#summary(data_mis)
-#have to deal with unlikely value of BMI_derived >50
-
-##########################
-#CREATE INTERACTION TERMS#
-##########################
-#mean-center pain_T2, d_eval, d_id, habit #
+##############################################
+#CREATE INTERACTION TERMS & DERIVED VARIABLES#
+##############################################
+#mean-center pain_T2, d_eval, d_id, habit, then create interactiont terms#
+#add BMI_derived#
 
 #Note that I added a line saying "pain.[AUTOMATIC-PROCESS]" should be used as a predictor when 
 #imputing IPAQ_MET_MIN_WEEK_T2_trunc. Without this step, the imputation model would neglect the product term, 
-#thus being incongruent with the analysis model.
+#thus being incongruent with the analysis model.????????????CHECK THIS
 
-imp2.ext<-cbind(data_mis,pain.eval=NA, pain.id=NA, pain.habit=NA,BMI_derived=NA)
-ini<-mice(imp2.ext,max=0, print=FALSE)
+
+data_ixn<-cbind(data_miss,pain.eval=NA, pain.id=NA, pain.habit=NA,BMI_derived=NA)
+ini<-mice(data_ixn,max=0, print=FALSE)
 meth<-ini$meth
 meth["pain.eval"]<- "~I((pain_T2-4.685)*(d_eval-0.8352))"
 meth["pain.id"]<- "~I((pain_T2-4.685)*(d_id-0.02792))"
@@ -165,62 +154,68 @@ pred[c("pain_T2","d_eval"),"pain.eval"]<-0
 pred[c("pain_T2","d_id"),"pain.id"]<-0
 pred[c("pain_T2","habit"),"pain.habit"]<-0
 pred[c("weight", "height"),"BMI_derived"]<-0
-post<-ini$post
-post["BMI_derived"]<-"imp.int.test[[j]][, i] <- squeeze(imp.int.test[[j]][, i], c(15, 50))"
-imp.int<- mice(imp2.ext, meth = meth, pred = pred, post = post,
-                print = FALSE, seed = 734)
-squeeze(imp2.ext, bounds = c(min(x[r]), max(x[r])), r = rep.int(TRUE, length(x)))
-https://stackoverflow.com/questions/58095295/imputation-in-mice-post-processing-r
-complete(imp.int)
-attributes(imp.int)
 
-####4. Post-process the values to constrain them between 1 and 25, use norm as the imputation method 
-#for tv.
-#In this way the imputed values of tv are constrained (squeezed by function squeeze()) between 1 and 25.
-ini <- mice(boys, maxit = 0)
-meth <- ini$meth
-meth["tv"] <- "norm"
-post <- ini$post
-post["tv"] <- "imp[[j]][, i] <- squeeze(imp[[j]][, i], c(1, 25))"
-imp <- mice(boys, meth=meth, post=post, print=FALSE)
-  
-#View(imp2.ext)
+#View(data_ixn)
+
+## attempted to include post-processing to impute BMI derived on the fly and constrain values between 15 and 50
+#, but this did not appear to work for me.....)
+#post<-ini$post
+#post["BMI_derived"]<-squeeze(data_ixn, bounds = c(min(data_ixn[15]), 
+#                                                 max(data_ixn[50])), 
+#                             r = rep.int(TRUE,length(data_ixn)))
 
 
-###############CREATING IMPUTATIONS###############
-##########consider how many imputations need to be conducted
-tempData<-mice(imp2.ext, m=5,maxit=20, seed=734)
-modelFit1_eval<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_eval
-                                 +age+educ
-                                 +intention_strength+selfefficacy+selfefficacy_walk
-                                 +pain_T2+pain.eval))
+###############CONSIDER HOW MANY IMPUTATIONS NEED TO BE CREATED###############
+#See von Hippel, 2019
+#First, carry out a pilot analysis. Impute the data using a convenient number of imputations. 
+#(20 imputations is a reasonable default, if it doesn’t take too long.) Estimate the FMI by analyzing the imputed data.
+#create temporary data set
 
-tempData$imp$pain.id
-#how_many_imputations(modelFit1_eval)
+#Next, plug the estimated FMI into the formula above to figure out how many imputations 
+#you need to achieve a certain value of CV(SE). If you need more imputations than you had in the pilot, 
+#then add those imputations and analyze the data again.
+
+
+tempData<-mice(data_ixn, m=5,maxit=20, seed=734,meth = meth, pred = pred, post = post)
+
+
+modelFit1_eval<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc
+				+d_eval
+        +age+educ
+        +intention_strength + selfefficacy + selfefficacy_walk
+        + pain_T2+ pain.eval))
+
+
 #how_many_imputations(modelFit1_eval)
 #[1] 154
 
-#modelFit1_id<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_id+intention+age+gender+BMI+income+educ+location+pain_T2))
+#modelFit1_id<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc
+				+d_id
+				+intention
+				+age +educ
+				+intention_strength + selfefficacy +selfefficacy_walk
+                                + pain_T2 + pain.id))
+
 #how_many_imputations(modelFit1_id)
 #[1] 153
 
-#modelFit1_habit<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+habit+intention+age+gender+BMI+income+educ+location+pain_T2))
+###????WHAT IS THIStempData$imp$pain.id
+
+#modelFit1_habit<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc
+				+d_id
+				+intention
+				+age +educ
+				+intention_strength + selfefficacy +selfefficacy_walk
+                                +pain_T2 + pain.habit))
+
 #how_many_imputations(modelFit1_habit)
 #[1] 152
 
 
-###############CREATING THE IMPUTED DATA SET W/ 154 IMPUTATIONS###############
-#imp<-mice(data_mis,m=154,seed=734, print=F)
-imp.int <- mice(imp2.ext, m=154, meth = meth, pred = pred, seed = 734) #has interaction terms
+###############CREATING THE IMPUTED DATA SET W/ ?154 IMPUTATIONS###############
+data_ixn_imp<- mice(data_ixn, m=154, meth = meth, pred = pred, post = post,seed = 734) #has interaction terms
 
-imp.int.test <- mice(imp2.ext, m=1, meth = meth, pred = pred, post = post, seed = 734)
 
-imp.int.test <- mice(imp.int, m=1, meth = meth, pred = pred, post = post, seed = 734)
-
-View(imp.int.test)
-#has interaction terms
-View(imp.int.test_long)
-View(imp2.ext)
 ###CHECK THIS CODE####
 #plot(imp)
 plot(imp.int)
@@ -258,13 +253,110 @@ bwplot(imp, pch=20,cex=1.2)
 
 ###############SAVE THE IMPUTED DATA###############
 #turn datasets into long format
-imp.int_long<-mice::complete(imp.int, action="long", include = TRUE)
-View(imp.int_long)
 
-imp.int.test_long<-mice::complete(imp.int.test, action="long", include = TRUE)
-View(imp.int.test_long)
+data_imputed_long<-mice::complete(data_ixn_imp, action="long", include = TRUE)
+View(data_imputed_long)
 
-write.csv(imp.int_long,"01_data/02_processed/01_imputed_data.csv", row.names=FALSE)
+write.csv(data_imputed_long,"01_data/02_processed/01_imputed_data.csv", row.names=FALSE)
+01_imputed_data<-write.RDS("01_data","02_processed","01_imputed_data.rds"))
+
+
+
+###############EXPLORE THE IMPUTED DATA###############
+#generate descriptive and summary statistics of the imputed dats
+
+
+
+#graphical displays such as histograms or boxplots
+
+
+
+
+
+#compare observed and imputed data (an internal check)
+##this includes boxplots, density plots, cumulative distribution plots
+##strip plots and quantile-quantile plots
+
+
+
+
+#end of script
+#close the error message catching script and save the file
+sink(type = "message")
+close(imputation_05)
+
+#Open the .txt file for inspection
+readLines(here("02_scripts","Errors", "05_imputation.txt"))
+
+
+#Sources
+#to determine how many imputations are needed von Hippel, 2018: https://statisticalhorizons.com/how-many-imputations
+#https://rdrr.io/github/josherrickson/howManyImputations/src/R/how_many_imputations.R
+#https://stats.stackexchange.com/questions/219013/how-do-the-number-of-imputations-the-maximum-iterations-affect-accuracy-in-mul/219049
+#Hippel 2018, How many imputations do you need? https://arxiv.org/abs/1608.05406
+#Nguyen et al.2017, Model checking in MI https://ete-online.biomedcentral.com/articles/10.1186/s12982-017-0062-6
+#https://stats.stackexchange.com/questions/200477/compute-95-confidence-interval-for-predictions-using-a-pooled-model-after-multi
+#https://github.com/stefvanbuuren/mice/issues/92 for CI
+#https://rdrr.io/cran/mice/man/pool.r.squared.html for r-square
+#https://www.tandfonline.com/doi/full/10.1080/00273171.2018.1540967 for significance tests and esitmates (F)
+#derived variables: https://stefvanbuuren.name/fimd/sec-knowledge.html
+
+#Notes
+#analysis model vs. models used for imputation
+#include all the variables from the analysis model in the imputation model 
+#to ensure imputation model preserved the relationships between the vars of interest
+#include auxiliary variables that are good candidates (i.e. highly correlated with incomplete vars, 
+#which could improve prediction of missing values)
+#include predictors of missingess
+
+#Theoretically it is always better to use higher m, but this involves more computation and storage. Setting  
+#m very high (say  m   =200) may be useful for low-level estimands that are very uncertain, and for which we want to approximate the full distribution, or for parameters that are notoriously different to estimates, like variance components. On the other hand, setting  
+#m high may not be worth the extra wait if the primary interest is on the point estimates (and not on standard errors,  
+# p -values, and so on). In that case using  m=5−20 will be enough under moderate missingness.
+
+#Imputing a dataset in practice often involves trial and error to adapt and refine the imputation model. Such initial explorations do not require large  
+#m. It is convenient to set  m= 5 during model building, and increase  m only after being satisfied with the model for the “final” round of imputation. 
+#So if calculation is not prohibitive, we may set  
+#m to the average percentage of missing data. The substantive conclusions are unlikely to change as a result of raising  
+#m beyond m=  5
+
+#explore the imputed value
+#generate descriptive statistics
+#graphical displays such as histograms or boxplots
+#compare observed and imputed data (an internal check)
+##this includes boxplots, density plots, cumulative distribution plots
+##strip plots and quantile-quantile plots
+##generate summary statistics of of the observed and imputed data
+
+#passive imputation: since transformed variable is available for imputation, the hope is that passive imputation
+#removes the bias of the imputation, then transform methods, while restoring consistency among the imputations that was broken
+
+#imputation models
+#1. assume missing at random (MAR) or missing not at random (MNAR)
+#2. form of the imputation model (structural and assumed error distribution, refer to 3.2)
+#3. set of variables to include as predictors into the imputation model
+#include as many relevant variables as possible, 3.3 for possibilities
+#4 should we impute variables that are functions of other incomplete varrs? 3.4 on passive imputation
+#5 order in which variables should be imputed, 3.6
+#6 setup of the starting imputations and number of iterations. 
+#convergence can be monitored Section 4.3
+#7 m, the number of multiply imputed data sets m too low = large simulation error, 
+#especially if missing information is high
+
+#https://stackoverflow.com/questions/58095295/imputation-in-mice-post-processing-r
+complete(imp.int)
+attributes(imp.int)
+
+####4. in earlier iterations of mice Post-process the values to constrain them between 1 and 25, use norm as the imputation method 
+#for tv.
+#In this way the imputed values of tv are constrained (squeezed by function squeeze()) between 1 and 25.
+ini <- mice(boys, maxit = 0)
+meth <- ini$meth
+meth["tv"] <- "norm"
+post <- ini$post
+post["tv"] <- "imp[[j]][, i] <- squeeze(imp[[j]][, i], c(1, 25))"
+imp <- mice(boys, meth=meth, post=post, print=FALSE)
+  ###############WHAT IS THIS?###############
 
 #datlist<-miceadds::mids2datlist(imp.int)
 #fit_m1_eval.list<-with(datlist, lm(IPAQ_MET_MIN_WEEK_T2_trunc~IPAQ_MET_MIN_WEEK_T1_trunc+d_eval))
@@ -505,42 +597,4 @@ location                                    0.2045455
 pain_T2                                     0.0800000
 IPAQ_MET_MIN_WEEK_T2_trunc                  0.0000000
 
-#Sources
-#to determine how many imputations are needed https://statisticalhorizons.com/how-many-imputations
-#https://stats.stackexchange.com/questions/219013/how-do-the-number-of-imputations-the-maximum-iterations-affect-accuracy-in-mul/219049
-#Hippel 2018, How many imputations do you need? https://arxiv.org/abs/1608.05406
-#Nguyen et al.2017, Model chcking in MI https://ete-online.biomedcentral.com/articles/10.1186/s12982-017-0062-6
-#https://stats.stackexchange.com/questions/200477/compute-95-confidence-interval-for-predictions-using-a-pooled-model-after-multi
-#https://github.com/stefvanbuuren/mice/issues/92 for CI
-#https://rdrr.io/cran/mice/man/pool.r.squared.html for r-square
-#https://www.tandfonline.com/doi/full/10.1080/00273171.2018.1540967 for significance tests and esitmates (F)
-#derived variables: https://stefvanbuuren.name/fimd/sec-knowledge.html
 
-#Notes
-#analysis model vs. models used for imputation
-#include all the variables from the analysis model in the imputation model 
-#to ensure imputation model preserved the relationships between the vars of interest
-#include auxiliary variables that are good candidates (i.e. highly correlated with incomplete vars, 
-#which could improve prediction of missing values)
-#include predictors of missingess
-
-#Theoretically it is always better to use higher m, but this involves more computation and storage. Setting  
-#m very high (say  m   =200) may be useful for low-level estimands that are very uncertain, and for which we want to approximate the full distribution, or for parameters that are notoriously different to estimates, like variance components. On the other hand, setting  
-#m high may not be worth the extra wait if the primary interest is on the point estimates (and not on standard errors,  
-# p -values, and so on). In that case using  m=5−20 will be enough under moderate missingness.
-
-#Imputing a dataset in practice often involves trial and error to adapt and refine the imputation model. Such initial explorations do not require large  
-#m. It is convenient to set  m= 5 during model building, and increase  m only after being satisfied with the model for the “final” round of imputation. So if calculation is not prohibitive, we may set  
-#m to the average percentage of missing data. The substantive conclusions are unlikely to change as a result of raising  
-#m beyond m=  5
-
-#explore the imputed value
-#generate descriptive statistics
-#graphical displays such as histograms or boxplots
-#compare observed and imputed data (an internal check)
-##this includes boxplots, density plots, cumulative distribution plots
-##strip plots and quantile-quantile plots
-##generate summary statistics of of the observed and imputed data
-
-#passive imputation: since transformed variable is available for imputation, the hope is that passive imputation
-#removes the bias of the imputation, then transform methods, while restoring consistency among the imputations that was broken
