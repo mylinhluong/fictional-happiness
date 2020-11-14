@@ -4,19 +4,20 @@
 #to load csv into environment
 #imp.int<- read_csv(here("01_data","02_processed", "01_imputed_data.csv"))
 
+
+
 #things to resolve:
-##number of imputations to run
 ##dealing with squeeze for BMI
 ##sensitivity analysis
 
-##LOAD LIBRARIES
+###############LOAD LIBRARIES###############
 library(here)
 library(dplyr)
 library(mice)
 library(lattice)
 library(naniar)#to explore missingness
-
 set.seed(734)
+options(max.print=999999)
 
 #Create a .txt file within the errors folder
 imputation_05 <- file(here("02_scripts","Errors", "05_imputation.txt"), open = "wt")
@@ -24,15 +25,8 @@ sink(imputation_05, type = "message")
 
 #https://uvastatlab.github.io/2019/05/01/getting-started-with-multiple-imputation-in-r/
 
-#library(howManyImputations)
-tempData <- mice(data,m=5,maxit=10,meth='pmm',seed=500)
-modelFit1 <- with(tempData,lm(Temp~ Ozone+Solar.R+Wind))
-how_many_imputations(modelFit1)
-[1] 72
-how_many_imputations(modelFit1, cv = .01)
-[1] 1767
 
-###LOAD FUNCTIONS
+###############LOAD FUNCTIONS###############
 #function to calculate how many options
 how_many_imputations <- function(model,
 cv = .05,
@@ -51,11 +45,16 @@ alpha = .05) {
   ceiling(1 + 1/2*(fmiu/cv)^2)
 }
 
-##IMPORT DATA
+###############IMPORT DATA###############
+#the following imported dataset is the processed dataset containing all variables
 data<- readRDS(here("01_data","02_processed","complete_data_processed.rds"))
 #str(data)
 
 #colnames(complete_data_processed)
+
+#the following dataset is a processed dataset with incomplete/missing data and includes 33 variables:
+#automatic processes, Physical activity at T1 and T2, Pain at T1 and T2, 
+#self-efficacy, intention, sociodemographic chars, BREQ-3 motivation
 
 data_miss<-data%>%
   select(d_eval,d_id, habit,
@@ -69,12 +68,13 @@ data_miss<-data%>%
          identified, amotivation,intrinsic,introjected,integrated,extrinsic)
 
 
-
 #View(data_miss)
 
+###############INSPECT THE INCOMPLETE DATA###############
 #Data of first and last 10 participants in the dataset
 #head(data_miss,10) 
 #tail(data_miss, 10)
+
 #summary(data_miss)
 
 #     d_eval             d_id              habit       IPAQ_MET_MIN_WEEK_T1_trunc IPAQ_TOTAL_MIN_WMV_T1 IPAQ_TOTAL_MVPA_T1
@@ -123,7 +123,7 @@ data_miss<-data%>%
 #NA's   :6       NA's   :6       NA's   :6  
 
 
-###############INSPECT THE MISSING DATA###############
+###############INSPECT THE MISSING DATA PATTERN###############
 #Missing data patterns
 md.pattern(data_miss, rotate.names=TRUE)
 p<-md.pairs(data_miss)
@@ -134,35 +134,53 @@ vis_miss(data_miss)
 ##############################################
 #CREATE INTERACTION TERMS & DERIVED VARIABLES#
 ##############################################
-#mean-center pain_T2, d_eval, d_id, habit, then create interactiont terms#
-#add BMI_derived#
-
-#Note that I added a line saying "pain.[AUTOMATIC-PROCESS]" should be used as a predictor when 
+#????????????Note that I added a line saying "pain.[AUTOMATIC-PROCESS]" should be used as a predictor when 
 #imputing IPAQ_MET_MIN_WEEK_T2_trunc. Without this step, the imputation model would neglect the product term, 
-#thus being incongruent with the analysis model.????????????CHECK THIS
+#thus being incongruent with the analysis model????????????
+
+#the following dataset creates new interaction variables of automatic proceses x pain. 
 
 
 data_ixn<-cbind(data_miss,pain.eval=NA, pain.id=NA, pain.habit=NA,BMI_derived=NA)
-ini<-mice(data_ixn,max=0, print=FALSE)
+ini<-mice(data_ixn,max=0)
 meth<-ini$meth
+###create interaction variables thru passive imputation
+#mean-centered: pain_T2, d_eval, d_id, habit, then created interaction terms &
+#a BMI calculation to account for imputed missing height/weight data
+#total of 37 variables in the dataset
 meth["pain.eval"]<- "~I((pain_T2-4.685)*(d_eval-0.8352))"
 meth["pain.id"]<- "~I((pain_T2-4.685)*(d_id-0.02792))"
 meth["pain.habit"] <- "~I((pain_T2-4.685)*(habit-4.361))"
 meth["BMI_derived"]<-"~I((data_mis$weight/data_mis$height/data_mis$height)*10000)"
-pred<-ini$pred
-pred[c("pain_T2","d_eval"),"pain.eval"]<-0
-pred[c("pain_T2","d_id"),"pain.id"]<-0
-pred[c("pain_T2","habit"),"pain.habit"]<-0
-pred[c("weight", "height"),"BMI_derived"]<-0
+#meth
+###repair circularity
+pred<-ini$predictorMatrix
+pred["pain_T2", "pain.eval"]<-0
+pred["d_eval", "pain.eval"]<-0
+pred["pain_T2", "pain.id"]<-0
+pred["d_id", "pain.id"]<-0
+pred["pain_T2", "pain.habit"]<-0
+pred["habit", "pain.habit"]<-0
+pred["weight","BMI_derived"]<-0
+pred["height","BMI_derived"]<-0
+pred["weight","BMI_calc"]<-0
+pred["height","BMI_calc"]<-0
+pred["pain.eval","IPAQ_MET_MIN_WEEK_T2_trunc"]<-1
+pred["pain.id","IPAQ_MET_MIN_WEEK_T2_trunc"]<-1
+pred["pain.habit","IPAQ_MET_MIN_WEEK_T2_trunc"]<-1
+pred["pain.eval","IPAQ_TOTAL_MIN_WMV_T2"]<-1
+pred["pain.id","IPAQ_TOTAL_MIN_WMV_T2"]<-1
+pred["pain.habit","IPAQ_TOTAL_MIN_WMV_T2"]<-1
+pred["pain.eval","IPAQ_TOTAL_MVPA_T2"]<-1
+pred["pain.id","IPAQ_TOTAL_MVPA_T2"]<-1
+pred["pain.habit","IPAQ_TOTAL_MVPA_T2"]<-1
+#post <-ini$post
+#post["BMI_derived"] <- squeeze(BMI_derived, bounds = c(15,50))
 
-#View(data_ixn)
 
-## attempted to include post-processing to impute BMI derived on the fly and constrain values between 15 and 50
-#, but this did not appear to work for me.....)
-#post<-ini$post
-#post["BMI_derived"]<-squeeze(data_ixn, bounds = c(min(data_ixn[15]), 
-#                                                 max(data_ixn[50])), 
-#                             r = rep.int(TRUE,length(data_ixn)))
+#alternative if "post" doesn't work
+#df_squeeze <- df %>% 
+#  mutate(y_ex_squeeze = squeeze(y_ex, bounds = c(-.25, .5)))
 
 
 ###############CONSIDER HOW MANY IMPUTATIONS NEED TO BE CREATED###############
@@ -175,46 +193,31 @@ pred[c("weight", "height"),"BMI_derived"]<-0
 #you need to achieve a certain value of CV(SE). If you need more imputations than you had in the pilot, 
 #then add those imputations and analyze the data again.
 
-
-tempData<-mice(data_ixn, m=5,maxit=20, seed=734,meth = meth, pred = pred, post = post)
-
-
-modelFit1_eval<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc
-				+d_eval
-        +age+educ
-        +intention_strength + selfefficacy + selfefficacy_walk
-        + pain_T2+ pain.eval))
-
+#library(howManyImputations)
+tempData<-mice(data_ixn, m=5,maxit=20, meth='pmm', pred= 'pred', post= 'post', seed=734)
+tempData<-mice(data_ixn, m=5,maxit=20, meth=meth, pred=pred, post=post, seed=734)
+modelFit1_eval<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_eval+age+educ_years
+        +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.eval))
 
 #how_many_imputations(modelFit1_eval)
-#[1] 154
+#[1] 117
 
-#modelFit1_id<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc
-				+d_id
-				+intention
-				+age +educ
-				+intention_strength + selfefficacy +selfefficacy_walk
-                                + pain_T2 + pain.id))
+modelFit1_id<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_id+age+educ_years
+                               +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.id))
 
 #how_many_imputations(modelFit1_id)
-#[1] 153
+#[1] 147
 
-###????WHAT IS THIStempData$imp$pain.id
-
-#modelFit1_habit<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc
-				+d_id
-				+intention
-				+age +educ
-				+intention_strength + selfefficacy +selfefficacy_walk
-                                +pain_T2 + pain.habit))
+modelFit1_habit<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+habit+age+educ_years
+                               +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.habit))
 
 #how_many_imputations(modelFit1_habit)
-#[1] 152
+#[1] 123
 
 
-###############CREATING THE IMPUTED DATA SET W/ ?154 IMPUTATIONS###############
-data_ixn_imp<- mice(data_ixn, m=154, meth = meth, pred = pred, post = post,seed = 734) #has interaction terms
-
+###############CREATING THE IMPUTED DATA SET W/ 147 IMPUTATIONS###############
+data_ixn_imp<-mice(data_ixn, m=147, maxit=20, meth =meth, pred = pred,post=post, seed = 734) #has interaction terms
+tempData<-mice(data_ixn, m=5,maxit=20, meth='pmm', pred = pred, seed=734)
 
 ###CHECK THIS CODE####
 #plot(imp)
@@ -596,5 +599,7 @@ educ                                        0.2037037
 location                                    0.2045455
 pain_T2                                     0.0800000
 IPAQ_MET_MIN_WEEK_T2_trunc                  0.0000000
+
+####????WHAT IS THIStempData$imp$pain.id
 
 

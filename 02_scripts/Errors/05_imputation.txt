@@ -1,0 +1,59 @@
+Error: object 'imp' not found
+Error in meth["pain.eval"] <- "~I((pain_T2-4.685)*(d_eval-0.8352))" : 
+  object 'meth' not found
+Error in meth["pain.id"] <- "~I((pain_T2-4.685)*(d_id-0.02792))" : 
+  object 'meth' not found
+Error in meth["pain.habit"] <- "~I((pain_T2-4.685)*(habit-4.361))" : 
+  object 'meth' not found
+Error in meth["BMI_derived"] <- "~I((data_mis$weight/data_mis$height/data_mis$height)*10000)" : 
+  object 'meth' not found
+Error: object 'imp' not found
+Error in pred["pain_T2", "pain.eval"] <- 0 : object 'pred' not found
+Error in pred["d_eval", "pain.eval"] <- 0 : object 'pred' not found
+Error in pred["pain_T2", "pain.id"] <- 0 : object 'pred' not found
+Error in pred["d_id", "pain.id"] <- 0 : object 'pred' not found
+Error in pred["pain_T2", "pain.habit"] <- 0 : object 'pred' not found
+Error in pred["habit", "pain.habit"] <- 0 : object 'pred' not found
+Error in pred["weight", "BMI_derived"] <- 0 : object 'pred' not found
+Error in pred["height", "BMI_derived"] <- 0 : object 'pred' not found
+Error in pred["weight", "BMI_calc"] <- 0 : object 'pred' not found
+Error in pred["height", "BMI_calc"] <- 0 : object 'pred' not found
+Error in pred["pain.eval", "IPAQ_MET_MIN_WEEK_T2_trunc"] <- 1 : 
+  object 'pred' not found
+Error in pred["pain.id", "IPAQ_MET_MIN_WEEK_T2_trunc"] <- 1 : 
+  object 'pred' not found
+Error in pred["pain.habit", "IPAQ_MET_MIN_WEEK_T2_trunc"] <- 1 : 
+  object 'pred' not found
+Error: object 'pred' not found
+Error: object 'meth' not found
+Error: object 'imp' not found
+Error in meth["pain.eval"] <- "~I((pain_T2-4.685)*(d_eval-0.8352))" : 
+  object 'meth' not found
+Error in meth["pain.id"] <- "~I((pain_T2-4.685)*(d_id-0.02792))" : 
+  object 'meth' not found
+Error in meth["pain.habit"] <- "~I((pain_T2-4.685)*(habit-4.361))" : 
+  object 'meth' not found
+Error in meth["BMI_derived"] <- "~I((data_mis$weight/data_mis$height/data_mis$height)*10000)" : 
+  object 'meth' not found
+Error: object 'meth' not found
+Warning message:
+Number of logged events: 4 
+Error in rep.int(TRUE, length(x)) : object 'BMI_derived' not found
+Error in rep.int(TRUE, length(x)) : 
+  argument "x" is missing, with no default
+Error in rep.int(TRUE, length(x)) : object 'BMI_derived' not found
+Error in rep.int(TRUE, length(x)) : object 'BMI_derived' not found
+Error in rep.int(TRUE, length(x)) : object 'BMI_derived' not found
+Error in structure(x, class = unique(c("AsIs", oldClass(x)))) : 
+  object 'data_mis' not found
+Error: predictorMatrix not a matrix
+Error: predictorMatrix not a matrix
+Error: predictorMatrix not a matrix
+Error: predictorMatrix not a matrix
+Error: predictorMatrix not a matrix
+Warning message:
+Number of logged events: 104 
+Error in structure(x, class = unique(c("AsIs", oldClass(x)))) : 
+  object 'data_mis' not found
+Error in structure(x, class = unique(c("AsIs", oldClass(x)))) : 
+  object 'data_mis' not found
