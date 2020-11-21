@@ -4,8 +4,6 @@
 #to load csv into environment
 #imp.int<- read_csv(here("01_data","02_processed", "01_imputed_data.csv"))
 
-
-
 #things to resolve:
 ##dealing with squeeze for BMI
 ##sensitivity analysis
@@ -23,11 +21,8 @@ options(max.print=999999)
 imputation_05 <- file(here("02_scripts","Errors", "05_imputation.txt"), open = "wt")
 sink(imputation_05, type = "message")
 
-#https://uvastatlab.github.io/2019/05/01/getting-started-with-multiple-imputation-in-r/
-
-
 ###############LOAD FUNCTIONS###############
-#function to calculate how many options
+#function to calculate how many imputations to compute
 how_many_imputations <- function(model,
 cv = .05,
 alpha = .05) {
@@ -48,16 +43,15 @@ alpha = .05) {
 ###############IMPORT DATA###############
 #the following imported dataset is the processed dataset containing all variables
 data<- readRDS(here("01_data","02_processed","complete_data_processed.rds"))
-#str(data)
 
-#colnames(complete_data_processed)
+#colnames(data)
 
 #the following dataset is a processed dataset with incomplete/missing data and includes 33 variables:
 #automatic processes, Physical activity at T1 and T2, Pain at T1 and T2, 
 #self-efficacy, intention, sociodemographic chars, BREQ-3 motivation
 
 data_miss<-data%>%
-  select(d_eval,d_id, habit,
+  select(group, d_eval,d_id, habit,
          IPAQ_MET_MIN_WEEK_T1_trunc,IPAQ_TOTAL_MIN_WMV_T1, IPAQ_TOTAL_MVPA_T1,
          IPAQ_MET_MIN_WEEK_T2_trunc,IPAQ_TOTAL_MIN_WMV_T2,IPAQ_TOTAL_MVPA_T2,
          pain_T1,pain_T2,
@@ -67,8 +61,8 @@ data_miss<-data%>%
          instrumental,affective,
          identified, amotivation,intrinsic,introjected,integrated,extrinsic)
 
-
 #View(data_miss)
+str(data_miss)
 
 ###############INSPECT THE INCOMPLETE DATA###############
 #Data of first and last 10 participants in the dataset
@@ -134,26 +128,24 @@ vis_miss(data_miss)
 ##############################################
 #CREATE INTERACTION TERMS & DERIVED VARIABLES#
 ##############################################
-#????????????Note that I added a line saying "pain.[AUTOMATIC-PROCESS]" should be used as a predictor when 
-#imputing IPAQ_MET_MIN_WEEK_T2_trunc. Without this step, the imputation model would neglect the product term, 
-#thus being incongruent with the analysis model????????????
-
-#the following dataset creates new interaction variables of automatic proceses x pain. 
-
-
+###the following dataset creates new interaction variables of automatic proceses x pain 
+#a total of 38 variables in the dataset
 data_ixn<-cbind(data_miss,pain.eval=NA, pain.id=NA, pain.habit=NA,BMI_derived=NA)
-ini<-mice(data_ixn,max=0)
+
+###obtain predictor matrix and imputation method w/ a dry run of mice (i.e. imputation with 0 iterations).
+ini<-mice(data_ixn,maxit=0, print=F)
+
+###create variables thru passive imputation
+#mean-centered: pain_T2, d_eval, d_id, habit, then created interaction terms 
 meth<-ini$meth
-###create interaction variables thru passive imputation
-#mean-centered: pain_T2, d_eval, d_id, habit, then created interaction terms &
-#a BMI calculation to account for imputed missing height/weight data
-#total of 37 variables in the dataset
 meth["pain.eval"]<- "~I((pain_T2-4.685)*(d_eval-0.8352))"
 meth["pain.id"]<- "~I((pain_T2-4.685)*(d_id-0.02792))"
 meth["pain.habit"] <- "~I((pain_T2-4.685)*(habit-4.361))"
-meth["BMI_derived"]<-"~I((data_mis$weight/data_mis$height/data_mis$height)*10000)"
-#meth
-###repair circularity
+#a BMI calculation to account for imputed missing height/weight data
+meth["BMI_derived"]<-"~I((weight/height/height)*10000)"
+
+
+###repair circularity in predictor matrix
 pred<-ini$predictorMatrix
 pred["pain_T2", "pain.eval"]<-0
 pred["d_eval", "pain.eval"]<-0
@@ -164,7 +156,10 @@ pred["habit", "pain.habit"]<-0
 pred["weight","BMI_derived"]<-0
 pred["height","BMI_derived"]<-0
 pred["weight","BMI_calc"]<-0
-pred["height","BMI_calc"]<-0
+
+###Note: "pain.[AUTOMATIC-PROCESS]" should be used as a predictor when 
+#imputing IPAQ_MET_MIN_WEEK_T2_trunc. Without this step, the imputation model would neglect the product term, 
+#thus being incongruent with the analysis model
 pred["pain.eval","IPAQ_MET_MIN_WEEK_T2_trunc"]<-1
 pred["pain.id","IPAQ_MET_MIN_WEEK_T2_trunc"]<-1
 pred["pain.habit","IPAQ_MET_MIN_WEEK_T2_trunc"]<-1
@@ -174,13 +169,16 @@ pred["pain.habit","IPAQ_TOTAL_MIN_WMV_T2"]<-1
 pred["pain.eval","IPAQ_TOTAL_MVPA_T2"]<-1
 pred["pain.id","IPAQ_TOTAL_MVPA_T2"]<-1
 pred["pain.habit","IPAQ_TOTAL_MVPA_T2"]<-1
+
+post <- init$post
+
+#group ID does not predict any other variable
+pred[,"group"]<-0
+
+###in future scripts, this is something to play around with more, 
+#I ended up doing the post-processing manually
 #post <-ini$post
 #post["BMI_derived"] <- squeeze(BMI_derived, bounds = c(15,50))
-
-
-#alternative if "post" doesn't work
-#df_squeeze <- df %>% 
-#  mutate(y_ex_squeeze = squeeze(y_ex, bounds = c(-.25, .5)))
 
 
 ###############CONSIDER HOW MANY IMPUTATIONS NEED TO BE CREATED###############
@@ -194,41 +192,139 @@ pred["pain.habit","IPAQ_TOTAL_MVPA_T2"]<-1
 #then add those imputations and analyze the data again.
 
 #library(howManyImputations)
-tempData<-mice(data_ixn, m=5,maxit=20, meth='pmm', pred= 'pred', post= 'post', seed=734)
-tempData<-mice(data_ixn, m=5,maxit=20, meth=meth, pred=pred, post=post, seed=734)
+tempData<-mice(data_ixn, m=5,maxit=20, meth = meth, pred = pred, seed=734)
+
+#test to see if data have been imputed for new variables
+tempData_long<-mice::complete(tempData, action="long", include = TRUE)
+#View(tempData_long)
+
 modelFit1_eval<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_eval+age+educ_years
         +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.eval))
 
-#how_many_imputations(modelFit1_eval)
-#[1] 117
+how_many_imputations(modelFit1_eval)
+#[1] 155
 
 modelFit1_id<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+d_id+age+educ_years
-                               +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.id))
+                             +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.id))
 
-#how_many_imputations(modelFit1_id)
-#[1] 147
+how_many_imputations(modelFit1_id)
+#[1] 152
 
 modelFit1_habit<-with(tempData,lm(IPAQ_MET_MIN_WEEK_T2_trunc~ IPAQ_MET_MIN_WEEK_T1_trunc+habit+age+educ_years
-                               +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.habit))
+                              +intention_strength + selfefficacy + selfefficacy_walk+ pain_T2 + pain.habit))
 
-#how_many_imputations(modelFit1_habit)
-#[1] 123
+how_many_imputations(modelFit1_habit)
+#[1] 155
 
 
-###############CREATING THE IMPUTED DATA SET W/ 147 IMPUTATIONS###############
-data_ixn_imp<-mice(data_ixn, m=147, maxit=20, meth =meth, pred = pred,post=post, seed = 734) #has interaction terms
-tempData<-mice(data_ixn, m=5,maxit=20, meth='pmm', pred = pred, seed=734)
+###############CREATING THE IMPUTED DATA SET W/ 136 IMPUTATIONS###############
+data_ixn_imp<-mice(data_ixn, m=155, maxit=20, meth =meth, pred = pred, seed = 734) #has interaction terms
+
+        
+###############SAVE THE IMPUTED DATA###############
+#save as multiply imputed datasets
+saveRDS(data_ixn_imp,"01_data/02_processed/01_imputed_data_asmids.rds")
+
+#turn datasets into long format
+data_imputed_long<-mice::complete(data_ixn_imp, action="long", include = TRUE)
+
+#Save imputed dataset as csv
+write.csv(data_imputed_long,"01_data/02_processed/01_imputed_data.csv", row.names=FALSE)
+
+#Post-processing of BMI to be within bounds
+data_imputed_long_post<- data_imputed_long %>% 
+  mutate(BMI_calc=squeeze(BMI_calc, bounds = c(15, 50)))%>%
+  mutate(BMI_derived = squeeze(BMI_derived, bounds = c(15, 50)))
+
+#Save imputed dataset with post-processing of BMI (calculated and derived) as csv
+write.csv(data_imputed_long_post,"01_data/02_processed/01_imputed_data_post.csv", row.names=FALSE)
+
+#saved "asmids" with BMI post-processing in order to run models on multiple imputed datasets
+data_imputed_long_post<-as.mids(data_imputed_long_post, where=NULL, .imp = ".imp", .id= ".id")
+saveRDS(data_imputed_long_post,"01_data/02_processed/01_imputed_data_long_post_asmids.rds")
+
+
+#https://uvastatlab.github.io/2019/05/01/getting-started-with-multiple-imputation-in-r/
 
 ###CHECK THIS CODE####
-#plot(imp)
-plot(imp.int)
-imp$meth
+#plot(data_ixn_imp)
+plot(data_ixn_imp)
+data_ixn_imp$meth
+
+table(complete(imp_mids)$BMI_derived)
 
 
 
 ###############DIAGNOSTIC CHECKING###############
+##Diagnostic graphs to study the discrepancy between observed and imputed data
+#good imputations have a distribution similar to observed data
+
+imp_mids<- readRDS(here("01_data","02_processed","01_imputed_data_long_post_asmids.rds"))
+
+#Check BMI_calc and BMI_derived
+#make a missing data indicator (miss) and check the relation of BMI_derived, 
+#weight and height in the imputed dat. To do so, plot the imptued values against their respective
+#calculated values
+miss <- is.na(imp_mids$data$BMI_calc)
+
+xyplot(imp_mids, BMI_derived ~ I((weight/height/height)*10000), na.groups = miss,
+       cex = c(1, 1), pch = c(1, 20),
+       ylab = "BMI (kg/m2) Imputed", xlab = "BMI (kg/m2) Calculated")
+
+plot(imp_mids, c("BMI_derived"))
+
+#We can inspect the distributions of the original and imputed data using the stripplot 
+#function that is part of the lattice package
+
+
+plot(imp_mids)
+stripplot(imp_mids)
+
+## labels observed data in blue and imputed data in red for y1
+col <- rep(c("blue", "red")[1 + as.numeric(is.na(imp1$data$y1))], 6)
+## plots data for y1 by imputation
+stripplot(y1 ~ .imp, data = imp_tot2, jit = TRUE, col = col, xlab = "imputation Number")
+
+
+imp_mids_sans<-readRDS(here("01_data","02_processed","01_imputed_data_asmids.rds"))
+plot(imp_mids_sans)
+stripplot(imp_mids_sans)
+
+imp_mids_BW<-bwplot(
+  imp_mids,
+  data,
+  na.groups = NULL,
+  groups = NULL,
+  as.table = TRUE,
+  theme = mice.theme(),
+  mayreplicate = TRUE,
+  allow.multiple = TRUE,
+  outer = TRUE,
+  drop.unused.levels = lattice::lattice.getOption("drop.unused.levels"),
+  ...,
+  subscripts = TRUE,
+  subset = TRUE
+)
+
+bwplot
+  x,
+  data,
+  na.groups = NULL,
+  groups = NULL,
+  as.table = TRUE,
+  theme = mice.theme(),
+  mayreplicate = TRUE,
+  allow.multiple = TRUE,
+  outer = TRUE,
+  drop.unused.levels = lattice::lattice.getOption("drop.unused.levels"),
+  ...,
+  subscripts = TRUE,
+  subset = TRUE
+)
+
+
 #DV
-imp$imp$IPAQ_MET_MIN_WEEK_T2_trunc
+imp_mids$imp$IPAQ_MET_MIN_WEEK_T2_trunc
 
 #imp$imp$IPAQ_TOTAL_MIN_WMV_T2
 #imp$imp$IPAQ_TOTAL_MVPA_T2
@@ -254,19 +350,12 @@ imp$imp$educ
 
 bwplot(imp, pch=20,cex=1.2)
 
-###############SAVE THE IMPUTED DATA###############
-#turn datasets into long format
 
-data_imputed_long<-mice::complete(data_ixn_imp, action="long", include = TRUE)
-View(data_imputed_long)
-
-write.csv(data_imputed_long,"01_data/02_processed/01_imputed_data.csv", row.names=FALSE)
-01_imputed_data<-write.RDS("01_data","02_processed","01_imputed_data.rds"))
 
 
 
 ###############EXPLORE THE IMPUTED DATA###############
-#generate descriptive and summary statistics of the imputed dats
+#generate descriptive and summary statistics of the imputed data
 
 
 
@@ -603,3 +692,4 @@ IPAQ_MET_MIN_WEEK_T2_trunc                  0.0000000
 ####????WHAT IS THIStempData$imp$pain.id
 
 
+meth["BMI_derived"]<-"~I((data_miss$weight/data_miss$height/data_miss$height)*10000)"
