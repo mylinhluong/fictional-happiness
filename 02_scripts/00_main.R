@@ -21,6 +21,7 @@
 #load library here
 library(here)
 
+############SCRIPTS############
 ##01_import data
 #this script imports data
 source(here("02_scripts","01_import.R")) 
@@ -59,7 +60,6 @@ source(here("02_scripts","03_tidy_IAT.R"))
 #write.csv(complete_data_processed,"01_data/02_processed/complete_data_processed.csv", row.names=FALSE)
 
 ##04 inspection of data (currently as a script, eventually as Rmd file)
-###START HERE AT NEXT SESSION###
 #https://psyteachr.github.io/msc-conv-f2f/rm2-r-markdown-correlations.html
 #https://stackoverflow.com/questions/39368928/using-data-from-environment-in-r-markdown
 #https://gist.github.com/sebkopf/7caffdd8b299ed73914a
@@ -76,19 +76,18 @@ source(here("02_scripts","03_tidy_IAT.R"))
 #with T2 physical activity.
 #If outlier was more than 3 SD above or below the mean, we winsorised (i.e. replaced extreme values with less extreme values) 
 #the extreme values to the next higher or lowest value found in the sample that was not an outlier
-source('/02_scripts/04_inspection.R')
+#source(here("02_scripts","04_inspection.R"))
 
-######################################IN PROCESS######################################
-##05 imputation 
-#This script creates an imputed dataset that pools 154 imputations to predict values using predictive mean matching
-##The csv for these data already exist in the fictional-happiness folders, run without # if needed
-#write.csv(imp.int,"01_data/02_processed/01_imputed_data.csv", row.names=FALSE)
-#to load csv into environment
-#imp.int<- read_csv(here("01_data","02_processed", "01_imputed_data.csv"))
-source('/02_scripts/06_imputation.R')
+##05 imputation (currently as a script, eventually as Rmd file)
+#This script creates an imputed dataset that pools 155 imputations to predict values using predictive mean matching
+#This script also does graphical and descriptive diagnostic checking to explore imputed vaues generated 
+#by the imputation model & comparisons b/w observed and imputed data
+#source(here("02_scripts","05_imputation.R"))
 
-##07_main_analysis (currently as a script, eventually as Rmd file)
-#This script runs estimates of associations between physical activity (IPAQ) and non-conscious processes using linear regression models
+############OUTPUT############
+##01_analyses (currently as a script, eventually as Rmd file)
+#This script runs estimates of associations between physical activity (IPAQ) and 
+#each non-conscious processes using linear regression models
 #w/ statistical significance set at p<0.05
 #We conduct three-step multiple regression to identify the independent contributions of each non-conscious process at baseline on
 #physical activity at one-week follow-up
@@ -97,12 +96,11 @@ source('/02_scripts/06_imputation.R')
 #Step 3: + reflective processes (decisional intention, intention strength, self-effacy for physical activity when experiencing pain
 #while walking)
 #Step 4: Moderation, including a mean-centered interaction term between pain and each non-conscious process
-source('/02_scripts/07_analysis_main.R')
 
-##08_posthoc_analysis (currently as a script, eventually as Rmd file)
-#This script runs estimates of association between physical activity (total minutes of physical activity, total minutes
-#of moderate-vigorous physical activity) and non-conscious processes using linear regression. This script also runs estimates
-#of association between physical activity (IPAQ) and non-conscious processses without accounting for
-#physical activity at baseline. We also conduct a sensitivity analysis that compares main analyses 
-#performed without winsorisation of outliers 3 SD above or below the mean
-source('/02_scripts/07_analysis_posthoc.R')
+##02_posthoc (currently as a script, eventually as Rmd file)
+#This script runs estimates of association between physical activity (total minutes of physical activity, 
+#total minutes of moderate-vigorous physical activity) and non-conscious processes using linear regression. 
+#This script also runs estimates of association between physical activity (IPAQ) and 
+#non-conscious processses without accounting for physical activity at baseline. 
+#We also conduct a sensitivity analysis that compares main analyses performed 
+#without winsorisation of outliers 3 SD above or below the mean
