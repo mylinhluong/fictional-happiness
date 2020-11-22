@@ -170,10 +170,11 @@ pred["pain.eval","IPAQ_TOTAL_MVPA_T2"]<-1
 pred["pain.id","IPAQ_TOTAL_MVPA_T2"]<-1
 pred["pain.habit","IPAQ_TOTAL_MVPA_T2"]<-1
 
-post <- init$post
-
 #group ID does not predict any other variable
 pred[,"group"]<-0
+
+##post-processing on the fly
+post <- init$post
 
 ###in future scripts, this is something to play around with more, 
 #I ended up doing the post-processing manually
@@ -217,7 +218,7 @@ how_many_imputations(modelFit1_habit)
 #[1] 155
 
 
-###############CREATING THE IMPUTED DATA SET W/ 136 IMPUTATIONS###############
+###############CREATING THE IMPUTED DATA SET W/ 155 IMPUTATIONS###############
 data_ixn_imp<-mice(data_ixn, m=155, maxit=20, meth =meth, pred = pred, seed = 734) #has interaction terms
 
         
@@ -244,154 +245,157 @@ data_imputed_long_post<-as.mids(data_imputed_long_post, where=NULL, .imp = ".imp
 saveRDS(data_imputed_long_post,"01_data/02_processed/01_imputed_data_long_post_asmids.rds")
 
 
-#https://uvastatlab.github.io/2019/05/01/getting-started-with-multiple-imputation-in-r/
-
-###CHECK THIS CODE####
-#plot(data_ixn_imp)
-plot(data_ixn_imp)
-data_ixn_imp$meth
-
-table(complete(imp_mids)$BMI_derived)
-
-
-
 ###############DIAGNOSTIC CHECKING###############
 ##Diagnostic graphs to study the discrepancy between observed and imputed data
 #good imputations have a distribution similar to observed data
 
-imp_mids<- readRDS(here("01_data","02_processed","01_imputed_data_long_post_asmids.rds"))
+###############IMPORT MULTIPLY IMPUTED DATA SET###############
+imp<- readRDS(here("01_data","02_processed","01_imputed_data_long_post_asmids.rds"))
 
-#Check BMI_calc and BMI_derived
-#make a missing data indicator (miss) and check the relation of BMI_derived, 
-#weight and height in the imputed dat. To do so, plot the imptued values against their respective
-#calculated values
-miss <- is.na(imp_mids$data$BMI_calc)
-
-xyplot(imp_mids, BMI_derived ~ I((weight/height/height)*10000), na.groups = miss,
-       cex = c(1, 1), pch = c(1, 20),
-       ylab = "BMI (kg/m2) Imputed", xlab = "BMI (kg/m2) Calculated")
-
-plot(imp_mids, c("BMI_derived"))
-
-#We can inspect the distributions of the original and imputed data using the stripplot 
-#function that is part of the lattice package
-
-
-plot(imp_mids)
-stripplot(imp_mids)
-
-## labels observed data in blue and imputed data in red for y1
-col <- rep(c("blue", "red")[1 + as.numeric(is.na(imp1$data$y1))], 6)
-## plots data for y1 by imputation
-stripplot(y1 ~ .imp, data = imp_tot2, jit = TRUE, col = col, xlab = "imputation Number")
-
-
-imp_mids_sans<-readRDS(here("01_data","02_processed","01_imputed_data_asmids.rds"))
-plot(imp_mids_sans)
-stripplot(imp_mids_sans)
-
-imp_mids_BW<-bwplot(
-  imp_mids,
-  data,
-  na.groups = NULL,
-  groups = NULL,
-  as.table = TRUE,
-  theme = mice.theme(),
-  mayreplicate = TRUE,
-  allow.multiple = TRUE,
-  outer = TRUE,
-  drop.unused.levels = lattice::lattice.getOption("drop.unused.levels"),
-  ...,
-  subscripts = TRUE,
-  subset = TRUE
-)
-
-bwplot
-  x,
-  data,
-  na.groups = NULL,
-  groups = NULL,
-  as.table = TRUE,
-  theme = mice.theme(),
-  mayreplicate = TRUE,
-  allow.multiple = TRUE,
-  outer = TRUE,
-  drop.unused.levels = lattice::lattice.getOption("drop.unused.levels"),
-  ...,
-  subscripts = TRUE,
-  subset = TRUE
-)
-
-
-#DV
-imp_mids$imp$IPAQ_MET_MIN_WEEK_T2_trunc
-
-#imp$imp$IPAQ_TOTAL_MIN_WMV_T2
-#imp$imp$IPAQ_TOTAL_MVPA_T2
-
-#main IV
-imp$imp$d_eval
-imp$imp$d_id
-imp$imp$habit
-
-#other predictor IV
-imp$imp$IPAQ_MET_MIN_WEEK_T1_trunc
-imp$imp$intention_strength
-#imp$imp$IPAQ_TOTAL_MIN_WMV_T1
-#imp$imp$IPAQ_TOTAL_MVPA_T1
-
-#sociodem covariates
-imp$imp$gender
-imp$imp$age
-imp$imp$BMI
-imp$imp$location
-imp$imp$income
-imp$imp$educ
-
-bwplot(imp, pch=20,cex=1.2)
-
-
-
-
+#Nguyen, Carlin, and Lee (2017) present a concise overview of methodologies to check the 
+#quality of the imputation model. In addition to the points mentioned above, 
+#the evaluation of the effect of the target analysis when making judgements 
+#about model adequacy, and the application of a wide range of methodologies to check imputation models.
+#Reference for Nguyen et al., 2017: https://ete-online.biomedcentral.com/articles/10.1186/s12982-017-0062-6
 
 ###############EXPLORE THE IMPUTED DATA###############
+#Conventional model evaluation concentrates on the fit between the data and the model. 
+#In imputation it is often more informative to focus on distributional discrepancy, 
+#the difference between the observed and imputed data.
+
 #generate descriptive and summary statistics of the imputed data
 
+summary(complete(imp,"long"))
+#Need to review more on this re: Rubin's Rule, although means are appropriate, variance might not be correct
+#https://stackoverflow.com/questions/50143902/descriptive-stats-for-mi-data-in-r-take-3?rq=1
+#This provides the mean of an artifical m times larger dataset. 
+#This dataset also has inappropriately low variance.
 
+#d_eval             d_id              habit       IPAQ_MET_MIN_WEEK_T1_trunc
+#Min.   :-1.2172   Min.   :-1.28287   Min.   :1.000   Min.   :    0             
+#1st Qu.: 0.6673   1st Qu.:-0.33731   1st Qu.:3.000   1st Qu.: 2216             
+#Median : 0.9287   Median : 0.04296   Median :4.750   Median : 4500             
+#Mean   : 0.8339   Mean   : 0.03303   Mean   :4.364   Mean   : 5168             
+#3rd Qu.: 1.1077   3rd Qu.: 0.41079   3rd Qu.:5.750   3rd Qu.: 7149             
+#Max.   : 1.6318   Max.   : 1.18383   Max.   :7.000   Max.   :21798             
 
-#graphical displays such as histograms or boxplots
+#IPAQ_TOTAL_MIN_WMV_T1 IPAQ_TOTAL_MVPA_T1 IPAQ_MET_MIN_WEEK_T2_trunc IPAQ_TOTAL_MIN_WMV_T2 IPAQ_TOTAL_MVPA_T2    pain_T1         pain_T2      
+#Min.   :  0.0         Min.   :  0.0      Min.   :   33              Min.   :  0.0         Min.   :  0.00     Min.   :0.000   Min.   : 0.000  
+#1st Qu.: 90.0         1st Qu.: 10.0      1st Qu.: 1856              1st Qu.: 70.0         1st Qu.:  0.00     1st Qu.:4.000   1st Qu.: 3.000  
+#Median :180.0         Median : 60.0      Median : 3736              Median :160.0         Median : 60.00     Median :5.000   Median : 5.000  
+#Mean   :205.9         Mean   :105.1      Mean   : 4378              Mean   :182.4         Mean   : 92.04     Mean   :5.069   Mean   : 4.714  
+#3rd Qu.:310.0         3rd Qu.:180.0      3rd Qu.: 6129              3rd Qu.:270.0         3rd Qu.:150.00     3rd Qu.:6.000   3rd Qu.: 6.000  
+#Max.   :540.0         Max.   :360.0      Max.   :16924              Max.   :540.0         Max.   :360.00     Max.   :9.000   Max.   :10.000  
 
+#selfefficacy   selfefficacy_walk   intention      intention_min    intention_strength      age         gender        height   
+#Min.   :1.000   Min.   :1.000     Min.   :0.0000   Min.   :   0.0   Min.   :1.000      Min.   : 46.00   1:28248   Min.   :135  
+#1st Qu.:2.500   1st Qu.:2.000     1st Qu.:1.0000   1st Qu.: 120.0   1st Qu.:4.000      1st Qu.: 56.00   2:10967   1st Qu.:160  
+#Median :3.000   Median :3.000     Median :1.0000   Median : 240.0   Median :5.000      Median : 62.00             Median :165  
+#Mean   :3.009   Mean   :2.704     Mean   :0.9626   Mean   : 318.8   Mean   :4.293      Mean   : 62.62             Mean   :167  
+#3rd Qu.:3.750   3rd Qu.:3.000     3rd Qu.:1.0000   3rd Qu.: 420.0   3rd Qu.:5.000      3rd Qu.: 68.00             3rd Qu.:175  
+#Max.   :4.000   Max.   :4.000     Max.   :1.0000   Max.   :6360.0   Max.   :5.000      Max.   :114.00             Max.   :193  
 
+#weight           income        educ_years        state          study_knee    BMI_calc      instrumental     affective       identified   
+#Min.   : 49.00   Min.   :1.000   Min.   : 0.00   6      :14092   1:18343    Min.   :18.79   Min.   :0.000   Min.   :0.000   Min.   :0.250  
+#1st Qu.: 72.00   1st Qu.:3.000   1st Qu.:12.00   5      : 9016   2:20872    1st Qu.:25.47   1st Qu.:6.000   1st Qu.:5.000   1st Qu.:2.750  
+#Median : 83.00   Median :4.000   Median :15.00   4      : 7114              Median :29.39   Median :7.000   Median :6.000   Median :3.500  
+#Mean   : 84.23   Mean   :3.833   Mean   :14.86   1      : 3261              Mean   :30.27   Mean   :6.305   Mean   :5.531   Mean   :3.227  
+#3rd Qu.: 95.00   3rd Qu.:5.000   3rd Qu.:17.50   3      : 2530              3rd Qu.:34.29   3rd Qu.:7.000   3rd Qu.:7.000   3rd Qu.:3.750  
+#Max.   :150.00   Max.   :6.000   Max.   :35.00   7      : 1678              Max.   :49.13   Max.   :7.000   Max.   :7.000   Max.   :4.000  
+                                                  #(Other): 1524                                                                             
+#amotivation       intrinsic      introjected     integrated      extrinsic       pain.eval           pain.id           pain.habit      
+#Min.   :0.0000   Min.   :0.000   Min.   :0.00   Min.   :0.000   Min.   :0.000   Min.   :-6.80368   Min.   :-5.41545   Min.   :-17.8637  
+#1st Qu.:0.0000   1st Qu.:2.250   1st Qu.:1.50   1st Qu.:2.000   1st Qu.:0.000   1st Qu.:-0.39291   1st Qu.:-0.58536   1st Qu.: -1.8077  
+#Median :0.0000   Median :3.000   Median :2.00   Median :3.000   Median :0.500   Median :-0.07915   Median :-0.04265   Median : -0.1137  
+#Mean   :0.1944   Mean   :2.877   Mean   :2.09   Mean   :2.789   Mean   :0.737   Mean   :-0.14286   Mean   :-0.07013   Mean   : -0.1699  
+#3rd Qu.:0.0000   3rd Qu.:3.750   3rd Qu.:2.75   3rd Qu.:3.750   3rd Qu.:1.250   3rd Qu.: 0.19495   3rd Qu.: 0.37110   3rd Qu.:  1.2895  
+#Max.   :2.7500   Max.   :4.000   Max.   :4.00   Max.   :4.000   Max.   :3.250   Max.   : 6.24885   Max.   : 6.14107   Max.   : 15.7463  
 
+#BMI_derived   
+#Min.   :15.78  
+#1st Qu.:25.47  
+#Median :29.38  
+#Mean   :30.27  
+#3rd Qu.:34.21  
+#Max.   :50.00 
 
+#I have not found a better solution than applying manually Rubin's rule to the mean estimate. 
+#The correct estimate is simply the mean of estimates accross all imputed datasets
+res <- with(imp, mean(IPAQ_MET_MIN_WEEK_T1_trunc)) #get the mean for each imputed dataset, stored in res$analyses
+do.call(sum, res$analyses) / 155 #compute mean over m = 155 mean estimations
+#sd for standard deviation
+#var for variance
 
-#compare observed and imputed data (an internal check)
+#compare observed and imputed data (an internal check) using graphical displays
 ##this includes boxplots, density plots, cumulative distribution plots
 ##strip plots and quantile-quantile plots
 
+#Box-and-whisker plots of observed and imputed data
+bwplot(imp, d_eval ~ .imp)
+bwplot(imp, d_id ~ .imp)
+bwplot(imp, habit ~ .imp)
+bwplot(imp, IPAQ_MET_MIN_WEEK_T1_trunc ~ .imp)
+bwplot(imp, IPAQ_MET_MIN_WEEK_T2_trunc ~ .imp)
+bwplot(imp, pain_T2 ~ .imp)
 
 
+#We can inspect the distributions of the original and imputed data using the stripplot 
+#function that is part of the lattice package
+#stripplots
+stripplot(imp, d_eval~.imp, pch=20, cex=2)
+stripplot(imp, d_id~.imp, pch=20, cex=2)
+stripplot(imp, habit~.imp, pch=20, cex=2)
+stripplot(imp, IPAQ_MET_MIN_WEEK_T1_trunc~.imp, pch=20, cex=2)
+stripplot(imp, IPAQ_MET_MIN_WEEK_T2_trunc~.imp, pch=20, cex=2)
+stripplot(imp, pain_T2~.imp, pch=20, cex=2)
 
-#end of script
+
+stripplot(imp, height + weight + BMI_derived ~ .imp,
+          cex = c(2, 4), pch = c(1, 20), jitter = FALSE,
+          layout = c(3, 1)
+)
+
+stripplot(imp, d_eval + d_id + habit ~ .imp,
+          cex = c(2, 4), pch = c(1, 20), jitter = FALSE,
+          layout = c(3, 1)
+)
+
+stripplot(imp, IPAQ_MET_MIN_WEEK_T1_trunc + IPAQ_MET_MIN_WEEK_T2_trunc + pain_T2 ~ .imp,
+          cex = c(2, 4), pch = c(1, 20), jitter = FALSE,
+          layout = c(3, 1)
+)
+
+##Check BMI_calc and BMI_derived
+#make a missing data indicator (miss) and check the relation of BMI_derived, 
+#weight and height in the imputed dated. To do so, plot the imptued values against their respective
+#calculated values
+miss <- is.na(imp$data$BMI_calc)
+xyplot(imp, BMI_derived ~ I((weight/height/height)*10000), na.groups = miss,
+       cex = c(1, 1), pch = c(1, 20),
+       ylab = "BMI (kg/m2) Imputed", xlab = "BMI (kg/m2) Calculated")
+
+##end of script
 #close the error message catching script and save the file
 sink(type = "message")
 close(imputation_05)
 
-#Open the .txt file for inspection
+##Open the .txt file for inspection
 readLines(here("02_scripts","Errors", "05_imputation.txt"))
 
 
-#Sources
+###############SOURCES###############
 #to determine how many imputations are needed von Hippel, 2018: https://statisticalhorizons.com/how-many-imputations
 #https://rdrr.io/github/josherrickson/howManyImputations/src/R/how_many_imputations.R
 #https://stats.stackexchange.com/questions/219013/how-do-the-number-of-imputations-the-maximum-iterations-affect-accuracy-in-mul/219049
 #Hippel 2018, How many imputations do you need? https://arxiv.org/abs/1608.05406
 #Nguyen et al.2017, Model checking in MI https://ete-online.biomedcentral.com/articles/10.1186/s12982-017-0062-6
+#derived variables: https://stefvanbuuren.name/fimd/sec-knowledge.html
+
+##for analyses
 #https://stats.stackexchange.com/questions/200477/compute-95-confidence-interval-for-predictions-using-a-pooled-model-after-multi
 #https://github.com/stefvanbuuren/mice/issues/92 for CI
 #https://rdrr.io/cran/mice/man/pool.r.squared.html for r-square
-#https://www.tandfonline.com/doi/full/10.1080/00273171.2018.1540967 for significance tests and esitmates (F)
-#derived variables: https://stefvanbuuren.name/fimd/sec-knowledge.html
+#https://www.tandfonline.com/doi/full/10.1080/00273171.2018.1540967 for significance tests and estimates (F)
 
 #Notes
 #analysis model vs. models used for imputation
@@ -436,30 +440,20 @@ readLines(here("02_scripts","Errors", "05_imputation.txt"))
 #especially if missing information is high
 
 #https://stackoverflow.com/questions/58095295/imputation-in-mice-post-processing-r
-complete(imp.int)
-attributes(imp.int)
 
-####4. in earlier iterations of mice Post-process the values to constrain them between 1 and 25, use norm as the imputation method 
-#for tv.
-#In this way the imputed values of tv are constrained (squeezed by function squeeze()) between 1 and 25.
+####in earlier iterations of mice for "squeezing" values
+#Post-process the values to constrain them between 1 and 25, use norm as the imputation method 
+#for tv.#In this way the imputed values of tv are constrained (squeezed by function squeeze()) between 1 and 25.
 ini <- mice(boys, maxit = 0)
 meth <- ini$meth
 meth["tv"] <- "norm"
 post <- ini$post
 post["tv"] <- "imp[[j]][, i] <- squeeze(imp[[j]][, i], c(1, 25))"
 imp <- mice(boys, meth=meth, post=post, print=FALSE)
-  ###############WHAT IS THIS?###############
-
-#datlist<-miceadds::mids2datlist(imp.int)
-#fit_m1_eval.list<-with(datlist, lm(IPAQ_MET_MIN_WEEK_T2_trunc~IPAQ_MET_MIN_WEEK_T1_trunc+d_eval))
-#betas<-lapply(fit_m1_eval.list,coef)
-#summary(pool_mi(betas))
-
-#vars<-lapply(fit_m1_eval.list,FUN = function(x){vcovCL(x, cluster = datlist[[1]]$idschool)}))
 
 
-
-colnames(complete_data_processed)
+####CHECK AFTER THIS
+####????WHAT IS THIStempData$imp$pain.id
 #Residual standard error: 2575 on 151 degrees of freedom
 #(99 observations deleted due to missingness)
 #Multiple R-squared:  0.447,	Adjusted R-squared:  0.4397 
@@ -473,7 +467,7 @@ p<-md.pairs(data_mis)
 p
 
 p$mr/(p$mr+p$mm)
-flux(data_mis)[,1:3]
+flux(data_miss)[,1:3]
 #influx of variable quantifies how well its missing data connect to the observed data in other vars
 #outflux of variable quantifies how well its observed data connect to the missing data on other vars
 #in genderal, higher influx and outflux vars are preferred
@@ -507,12 +501,9 @@ location                   0.8695652 0.068521795 0.2426710
 pain_T2                    0.7905138 0.161653531 0.3061889
 IPAQ_MET_MIN_WEEK_T2_trunc 0.7272727 0.224867299 0.2426710
 
-quickpred(data_mis)
+quickpred(data_miss)
 
 imp$loggedEvents
-
-
-
 
 IPAQ_MET_MIN_WEEK_T2_trunc
 d_eval                                      0.5454545
@@ -688,8 +679,3 @@ educ                                        0.2037037
 location                                    0.2045455
 pain_T2                                     0.0800000
 IPAQ_MET_MIN_WEEK_T2_trunc                  0.0000000
-
-####????WHAT IS THIStempData$imp$pain.id
-
-
-meth["BMI_derived"]<-"~I((data_miss$weight/data_miss$height/data_miss$height)*10000)"
